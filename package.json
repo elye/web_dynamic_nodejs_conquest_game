@@ -1,0 +1,17 @@
+{
+  "name": "conquest",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "npm run dev:server & npm run dev:client",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
+    "clean": "rm -rf node_modules shared/dist server/dist client/dist shared/node_modules server/node_modules client/node_modules"
+  }
+}
