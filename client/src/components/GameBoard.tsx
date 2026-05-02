@@ -76,7 +76,7 @@ export default function GameBoard({
             return (
               <div
                 key={player.id}
-                className={`rounded-lg p-3 ${isCurrentTurn ? 'ring-2 ring-yellow-400 border-l-4 border-yellow-400' : ''}`}
+                className={`rounded-lg p-3 ${isCurrentTurn ? 'ring-3 ring-red-500 shadow-lg shadow-red-500/30' : ''}`}
                 style={{ backgroundColor: color.fill }}
               >
                 <div className="flex items-center gap-2">
@@ -93,8 +93,15 @@ export default function GameBoard({
                   )}
                 </div>
                 {isCurrentTurn && (
-                  <div className="mt-1 text-xs font-semibold text-yellow-800">
-                    {player.id === currentPlayerId ? '🎯 Your turn' : '⏳ Their turn'}
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-red-700">
+                      {player.id === currentPlayerId ? '🎯 Your turn' : '⏳ Their turn'}
+                    </span>
+                    {turnTimeRemaining !== null && turnTimeRemaining > 0 && (
+                      <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${turnTimeRemaining <= 10 ? 'bg-red-600 text-white animate-pulse' : 'bg-red-100 text-red-800'}`}>
+                        {turnTimeRemaining}s
+                      </span>
+                    )}
                   </div>
                 )}
                 <div className="mt-1 text-xs text-slate-700 space-y-0.5">
@@ -170,12 +177,7 @@ export default function GameBoard({
           {actionsAvailable && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
               <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-2">
-                {/* Turn timer */}
-                {turnTimeRemaining !== null && turnTimeRemaining > 0 && (
-                  <span className="text-xs font-mono text-yellow-400 mr-2">
-                    {turnTimeRemaining}s
-                  </span>
-                )}
+
 
                 {/* Province gold indicator */}
                 {selectedProvince && (
