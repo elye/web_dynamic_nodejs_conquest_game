@@ -16,6 +16,7 @@ import { useGameStore } from '../store/gameStore';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { usePing } from '../hooks/usePing';
 import GameBoard from '../components/GameBoard';
+import HowToPlay from '../components/HowToPlay';
 
 export default function GamePage() {
   const playerId = useAuthStore((s) => s.playerId);
@@ -25,6 +26,7 @@ export default function GamePage() {
   const applyDelta = useGameStore((s) => s.applyDelta);
   const addChatMessage = useGameStore((s) => s.addChatMessage);
   const setTurnTimer = useGameStore((s) => s.setTurnTimer);
+  const decrementTurnTimer = useGameStore((s) => s.decrementTurnTimer);
   const selectedHex = useGameStore((s) => s.selectedHex);
   const selectedUnit = useGameStore((s) => s.selectedUnit);
   const validMoves = useGameStore((s) => s.validMoves);
@@ -38,6 +40,7 @@ export default function GamePage() {
 
   const [notification, setNotification] = useState<string | null>(null);
   const [gameOverMsg, setGameOverMsg] = useState<string | null>(null);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const { sendMessage, isConnected, lastMessage } = useWebSocket(
     gameId,
@@ -104,6 +107,15 @@ export default function GamePage() {
         break;
     }
   }, [lastMessage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Local countdown timer for turn time
+  useEffect(() => {
+    if (turnTimeRemaining === null || turnTimeRemaining <= 0) return;
+    const interval = setInterval(() => {
+      decrementTurnTimer();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [turnTimeRemaining !== null && turnTimeRemaining > 0, decrementTurnTimer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function showNotification(text: string) {
     setNotification(text);
@@ -204,6 +216,16 @@ export default function GamePage() {
           {notification}
         </div>
       )}
+
+      {/* Help button */}
+      <button
+        onClick={() => setIsHelpOpen(true)}
+        className="absolute top-4 right-20 bg-gray-800 border border-gray-600 text-white text-sm px-3 py-1.5 rounded-lg hover:bg-gray-700 transition-colors z-40"
+      >
+        ❓ Help
+      </button>
+
+      <HowToPlay isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
 
       {/* Ping warning */}
       {pingWarning && (

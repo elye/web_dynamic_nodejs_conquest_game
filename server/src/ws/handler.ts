@@ -169,7 +169,11 @@ function handleDisconnect(playerId: string, gameId: string): void {
   clients.delete(playerId);
 
   const gameState = getGameState(gameId);
-  if (!gameState) return;
+  if (!gameState) {
+    // Lobby phase — temporary disconnection, do NOT delete the room.
+    // Room deletion only happens via the explicit HTTP leave endpoint.
+    return;
+  }
 
   const player = gameState.players.find((p) => p.id === playerId);
   if (!player || player.isEliminated) return;
@@ -468,7 +472,7 @@ function handleRequestState(playerId: string, gameId: string): void {
 
 // ── Turn Timer ──
 
-function startTurnTimer(gameState: GameState, gameId: string): void {
+export function startTurnTimer(gameState: GameState, gameId: string): void {
   clearTurnTimer(gameId);
 
   const timeLimit = gameState.settings.turnTimeLimit;

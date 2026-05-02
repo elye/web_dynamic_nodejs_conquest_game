@@ -24,7 +24,7 @@ import {
 } from '../game/engine.js';
 import { coordKey, getHexNeighbors, hexDistance } from '../game/mapGenerator.js';
 import { canCapture, getHexDefense } from '../game/combat.js';
-import { broadcastToGame } from '../ws/handler.js';
+import { broadcastToGame, startTurnTimer } from '../ws/handler.js';
 
 // ── Helpers ──
 
@@ -671,6 +671,11 @@ export async function playAITurn(gameId: string, playerId: string): Promise<void
       });
 
       broadcastDelta(gameState);
+
+      // Restart turn timer for the next player
+      if (gameState.status === GameStatus.IN_PROGRESS) {
+        startTurnTimer(gameState, gameId);
+      }
     }
   } catch {
     // If AI errors, just end turn to avoid blocking the game
@@ -685,6 +690,11 @@ export async function playAITurn(gameId: string, playerId: string): Promise<void
         });
 
         broadcastDelta(gameState);
+
+        // Restart turn timer for the next player
+        if (gameState.status === GameStatus.IN_PROGRESS) {
+          startTurnTimer(gameState, gameId);
+        }
       }
     } catch {
       // Game may have ended

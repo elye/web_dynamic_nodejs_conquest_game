@@ -1,4 +1,4 @@
-import type { GameRoom, GameState } from '@conquest/shared';
+import type { AiDifficulty, GameRoom, GameState } from '@conquest/shared';
 
 const API_BASE = '/api';
 
@@ -34,11 +34,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return res.json() as Promise<T>;
 }
 
-export function createGuestSession(): Promise<{ playerId: string; token: string; name: string }> {
-  return request('POST', '/auth/guest');
+export function createGuestSession(name?: string): Promise<{ playerId: string; token: string; name: string }> {
+  return request('POST', '/auth/guest', name ? { name } : undefined);
 }
 
-export function createGame(body: { name: string; mapSize: string; maxPlayers: number; turnTimer: number; password?: string; aiPlayers?: { difficulty: string }[] }): Promise<GameRoom> {
+export function createGame(body: { name: string; mapSize: string; maxPlayers: number; turnTimer: number; winCondition: string; password?: string }): Promise<GameRoom> {
   return request('POST', '/games', body);
 }
 
@@ -60,6 +60,14 @@ export function leaveGame(id: string): Promise<void> {
 
 export function startGame(id: string): Promise<GameState> {
   return request('POST', `/games/${encodeURIComponent(id)}/start`);
+}
+
+export function addAI(gameId: string, difficulty: AiDifficulty): Promise<GameRoom> {
+  return request('POST', `/games/${encodeURIComponent(gameId)}/add-ai`, { difficulty });
+}
+
+export function removeAI(gameId: string, playerId: string): Promise<GameRoom> {
+  return request('POST', `/games/${encodeURIComponent(gameId)}/remove-ai`, { playerId });
 }
 
 export function ping(gameId: string, playerId: string): Promise<void> {

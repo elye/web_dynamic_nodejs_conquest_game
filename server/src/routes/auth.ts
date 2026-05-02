@@ -6,11 +6,12 @@ import { sessionStore } from '../store/sessionStore.js';
 
 const router = Router();
 
-router.post('/guest', (_req, res) => {
+router.post('/guest', (req, res) => {
   try {
     const playerId = uuidv4();
-    const digits = String(Math.floor(1000 + Math.random() * 9000));
-    const name = `Guest_${digits}`;
+    const rawName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const sanitized = rawName.replace(/[<>"'&]/g, '').slice(0, 20);
+    const name = sanitized || `Guest_${String(Math.floor(1000 + Math.random() * 9000))}`;
 
     const token = jwt.sign({ playerId }, config.jwtSecret, { expiresIn: '24h' });
 

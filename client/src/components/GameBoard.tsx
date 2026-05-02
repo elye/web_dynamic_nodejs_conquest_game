@@ -1,7 +1,12 @@
 import type { GameState, Province, HexCoord, UnitType, StructureType } from '@conquest/shared';
+import {
+  UnitType as UnitTypeEnum,
+  StructureType as StructureTypeEnum,
+  UNIT_COST,
+  STRUCTURE_COST,
+} from '@conquest/shared';
 import { getPlayerColor } from '../utils/colors';
 import HexGrid from './HexGrid';
-import ActionBar from './ActionBar';
 
 interface GameBoardProps {
   gameState: GameState;
@@ -41,6 +46,16 @@ export default function GameBoard({
     currentPlayerId,
   );
 
+  const gold = selectedProvince?.gold ?? 0;
+  const hasHex = selectedHex !== null;
+  const actionsAvailable = !!(onBuyUnit && onBuildStructure && onEndTurn && onSurrender);
+
+  const handleSurrender = () => {
+    if (window.confirm('Are you sure you want to surrender?')) {
+      onSurrender?.();
+    }
+  };
+
   return (
     <div className="flex h-screen w-screen bg-gray-900">
       {/* Side panel */}
@@ -54,33 +69,40 @@ export default function GameBoard({
             const territoryCount = gameState.hexes.filter(
               (h) => h.owner === player.id,
             ).length;
+            const totalGold = gameState.provinces
+              .filter((p) => p.owner === player.id)
+              .reduce((sum, p) => sum + p.gold, 0);
+            const isCurrentTurn = player.id === gameState.currentTurnPlayerId;
             return (
               <div
                 key={player.id}
-                className="rounded-lg p-3"
+                className={`rounded-lg p-3 ${isCurrentTurn ? 'ring-2 ring-yellow-400 border-l-4 border-yellow-400' : ''}`}
                 style={{ backgroundColor: color.fill }}
               >
                 <div className="flex items-center gap-2">
+                  {isCurrentTurn && <span className="text-sm">▶</span>}
                   <div
                     className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: color.base }}
+                    style={{ backgroundColor: color.fill, border: `2px solid ${color.border}` }}
                   />
-                  <span
-                    className="text-sm font-medium"
-                    style={{ color: color.light }}
-                  >
+                  <span className="text-sm font-medium text-slate-900">
                     {player.name}
                   </span>
                   {player.id === currentPlayerId && (
-                    <span className="text-xs text-yellow-400">(you)</span>
+                    <span className="text-xs text-indigo-700 font-semibold">(you)</span>
                   )}
                 </div>
-                <div className="mt-1 text-xs text-gray-300 space-y-0.5">
+                {isCurrentTurn && (
+                  <div className="mt-1 text-xs font-semibold text-yellow-800">
+                    {player.id === currentPlayerId ? '🎯 Your turn' : '⏳ Their turn'}
+                  </div>
+                )}
+                <div className="mt-1 text-xs text-slate-700 space-y-0.5">
                   <div>Territory: {territoryCount}</div>
-                  <div>Gold: {player.gold}</div>
+                  <div>Gold: {totalGold}</div>
                   <div className="flex items-center gap-1">
                     <span
-                      className={`w-2 h-2 rounded-full ${player.isConnected ? 'bg-green-400' : 'bg-red-400'}`}
+                      className={`w-2 h-2 rounded-full ${player.isConnected ? 'bg-green-600' : 'bg-red-600'}`}
                     />
                     {player.isConnected ? 'Online' : 'Offline'}
                   </div>
@@ -96,7 +118,7 @@ export default function GameBoard({
             <h3 className="text-sm font-semibold text-white mb-2">
               Province Info
             </h3>
-            <div className="text-xs text-gray-300 space-y-1">
+            <div className="text-xs text-slate-300 space-y-1">
               <div>Size: {selectedProvince.hexes.length} hexes</div>
               <div>Treasury: {selectedProvince.gold} gold</div>
               <div>Income: +{selectedProvince.income}/turn</div>
@@ -143,29 +165,125 @@ export default function GameBoard({
             playerIds={playerIds}
             validTargets={validMoves}
           />
-        </div>
 
-        {/* Action bar */}
-        {onBuyUnit && onBuildStructure && onEndTurn && onSurrender ? (
-          <ActionBar
-            isMyTurn={isMyTurn}
-            selectedHex={selectedHex}
-            provinceGold={selectedProvince?.gold ?? null}
-            turnTimeRemaining={turnTimeRemaining ?? null}
-            onBuyUnit={onBuyUnit}
-            onBuildStructure={onBuildStructure}
-            onEndTurn={onEndTurn}
-            onSurrender={onSurrender}
-          />
-        ) : (
-          <div className="h-14 bg-gray-800 border-t border-gray-700 flex items-center justify-center">
-            <span className="text-sm text-gray-500">
-              Actions will appear here
-            </span>
-          </div>
-        )}
+          {/* Floating Action Panel */}
+          {actionsAvailable && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
+              <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-2">
+                {/* Turn timer */}
+                {turnTimeRemaining !== null && turnTimeRemaining > 0 && (
+                  <span className="text-xs font-mono text-yellow-400 mr-2">
+                    {turnTimeRemaining}s
+                  </span>
+                )}
+
+                {/* Province gold indicator */}
+                {selectedProvince && (
+                  <span className="text-xs text-amber-300 font-medium mr-2">
+                    💰 {selectedProvince.gold}g
+                  </span>
+                )}
+
+                {/* Buy unit buttons */}
+                <ActionButton
+                  emoji="🧑‍🌾"
+                  cost={UNIT_COST[UnitTypeEnum.PEASANT]}
+                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.PEASANT]}
+                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.PEASANT, selectedHex)}
+                  title="Buy Peasant"
+                />
+                <ActionButton
+                  emoji="💂"
+                  cost={UNIT_COST[UnitTypeEnum.SPEARMAN]}
+                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.SPEARMAN]}
+                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.SPEARMAN, selectedHex)}
+                  title="Buy Spearman"
+                />
+                <ActionButton
+                  emoji="🤴"
+                  cost={UNIT_COST[UnitTypeEnum.BARON]}
+                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.BARON]}
+                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.BARON, selectedHex)}
+                  title="Buy Baron"
+                />
+                <ActionButton
+                  emoji="🐴"
+                  cost={UNIT_COST[UnitTypeEnum.KNIGHT]}
+                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.KNIGHT]}
+                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.KNIGHT, selectedHex)}
+                  title="Buy Knight"
+                />
+
+                <div className="w-px h-8 bg-slate-600 mx-1" />
+
+                {/* Build structure buttons */}
+                <ActionButton
+                  emoji="🏰"
+                  cost={STRUCTURE_COST[StructureTypeEnum.TOWER]}
+                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.TOWER]}
+                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.TOWER, selectedHex)}
+                  title="Build Tower"
+                />
+                <ActionButton
+                  emoji="🏯"
+                  cost={STRUCTURE_COST[StructureTypeEnum.STRONG_TOWER]}
+                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.STRONG_TOWER]}
+                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.STRONG_TOWER, selectedHex)}
+                  title="Build Strong Tower"
+                />
+
+                <div className="w-px h-8 bg-slate-600 mx-1" />
+
+                {/* Surrender */}
+                <button
+                  onClick={handleSurrender}
+                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-red-900/60 text-red-300 hover:bg-red-800 transition-colors"
+                  title="Surrender"
+                >
+                  <span className="text-sm">🏳️</span>
+                </button>
+
+                {/* End turn */}
+                <button
+                  disabled={!isMyTurn}
+                  onClick={onEndTurn}
+                  className="flex items-center gap-1 px-4 py-2 rounded-xl bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ml-1"
+                  title="End Turn"
+                >
+                  <span>⏭️</span> End Turn
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
+  );
+}
+
+function ActionButton({
+  emoji,
+  cost,
+  disabled,
+  onClick,
+  title,
+}: {
+  emoji: string;
+  cost: number;
+  disabled: boolean;
+  onClick: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+    >
+      <span className="text-base leading-none">{emoji}</span>
+      <span className="text-[10px] text-slate-300 mt-0.5">{cost}g</span>
+    </button>
   );
 }
 

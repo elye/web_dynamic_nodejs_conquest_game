@@ -23,6 +23,7 @@ interface GameStore {
   clearSelection: () => void;
   addChatMessage: (msg: ChatMsg) => void;
   setTurnTimer: (seconds: number) => void;
+  decrementTurnTimer: () => void;
   reset: () => void;
 }
 
@@ -84,6 +85,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
 
   setTurnTimer: (seconds) => set({ turnTimeRemaining: seconds }),
+
+  decrementTurnTimer: () => {
+    const current = get().turnTimeRemaining;
+    if (current !== null && current > 0) {
+      set({ turnTimeRemaining: current - 1 });
+    }
+  },
 
   reset: () =>
     set({

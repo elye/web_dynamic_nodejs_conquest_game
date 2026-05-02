@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { MAP_SIZES } from '@conquest/shared';
-import type { AiDifficulty } from '@conquest/shared';
 
 interface CreateGameModalProps {
   onClose: () => void;
@@ -9,8 +8,8 @@ interface CreateGameModalProps {
     mapSize: string;
     maxPlayers: number;
     turnTimer: number;
+    winCondition: string;
     password?: string;
-    aiPlayers?: { difficulty: string }[];
   }) => void;
   isLoading: boolean;
 }
@@ -28,26 +27,28 @@ const TURN_TIMER_OPTIONS = [
   { label: 'Unlimited', value: 0 },
 ];
 
+const WIN_CONDITION_OPTIONS = [
+  { label: 'Last Standing', value: 'LAST_STANDING' },
+  { label: 'Territory 70%', value: 'TERRITORY_70' },
+];
+
 export default function CreateGameModal({ onClose, onCreate, isLoading }: CreateGameModalProps) {
   const [name, setName] = useState('');
   const [mapSizeIdx, setMapSizeIdx] = useState(1);
-  const [maxPlayers, setMaxPlayers] = useState(4);
   const [turnTimer, setTurnTimer] = useState(60_000);
+  const [winCondition, setWinCondition] = useState('LAST_STANDING');
   const [password, setPassword] = useState('');
-  const [aiCount, setAiCount] = useState(0);
-  const [aiDifficulty, setAiDifficulty] = useState<string>('MEDIUM');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const size = MAP_SIZE_OPTIONS[mapSizeIdx];
-    const aiPlayers = Array.from({ length: aiCount }, () => ({ difficulty: aiDifficulty }));
     onCreate({
       name: name || 'New Game',
       mapSize: size.key,
-      maxPlayers,
-      turnTimer: turnTimer,
+      maxPlayers: 6,
+      turnTimer,
+      winCondition,
       password: password || undefined,
-      aiPlayers: aiPlayers.length > 0 ? aiPlayers : undefined,
     });
   };
 
@@ -84,18 +85,7 @@ export default function CreateGameModal({ onClose, onCreate, isLoading }: Create
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">Max Players</label>
-            <select
-              value={maxPlayers}
-              onChange={(e) => setMaxPlayers(Number(e.target.value))}
-              className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              {[2, 3, 4, 5, 6].map((n) => (
-                <option key={n} value={n}>{n} players</option>
-              ))}
-            </select>
-          </div>
+
 
           <div>
             <label className="block text-sm text-gray-300 mb-1">Turn Timer</label>
@@ -111,33 +101,18 @@ export default function CreateGameModal({ onClose, onCreate, isLoading }: Create
           </div>
 
           <div>
-            <label className="block text-sm text-gray-300 mb-1">AI Players</label>
+            <label className="block text-sm text-gray-300 mb-1">Win Condition</label>
             <select
-              value={aiCount}
-              onChange={(e) => setAiCount(Number(e.target.value))}
+              value={winCondition}
+              onChange={(e) => setWinCondition(e.target.value)}
               className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {Array.from({ length: maxPlayers }, (_, i) => (
-                <option key={i} value={i}>{i}</option>
+              {WIN_CONDITION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           </div>
         </div>
-
-        {aiCount > 0 && (
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">AI Difficulty</label>
-            <select
-              value={aiDifficulty}
-              onChange={(e) => setAiDifficulty(e.target.value)}
-              className="w-full rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="EASY">Easy</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HARD">Hard</option>
-            </select>
-          </div>
-        )}
 
         <div>
           <label className="block text-sm text-gray-300 mb-1">Password (optional)</label>

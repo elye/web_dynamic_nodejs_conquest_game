@@ -134,6 +134,7 @@ export interface GameListMessage {
 export interface LobbyUpdateMessage {
   type: ServerMessageType.LOBBY_UPDATE;
   room: GameRoom;
+  deleted?: boolean;
 }
 
 export interface GameStateFullMessage {

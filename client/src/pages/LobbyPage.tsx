@@ -3,11 +3,13 @@ import { GameStatus } from '@conquest/shared';
 import { useAuthStore } from '../store/authStore';
 import { useLobbyStore } from '../store/lobbyStore';
 import CreateGameModal from '../components/CreateGameModal';
+import HowToPlay from '../components/HowToPlay';
 
 export default function LobbyPage() {
   const playerName = useAuthStore((s) => s.playerName);
   const { games, isLoading, error, fetchGames, createGame, joinGame } = useLobbyStore();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
 
   useEffect(() => {
     fetchGames();
@@ -27,9 +29,21 @@ export default function LobbyPage() {
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight">Conquest</h1>
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowHowToPlay(true)}
+              className="px-3 py-1.5 rounded-lg bg-slate-700 text-gray-300 hover:bg-slate-600 transition-colors text-sm"
+            >
+              ❓ How to Play
+            </button>
             <span className="text-sm text-gray-400">
               Playing as <span className="text-white font-medium">{playerName}</span>
             </span>
+            <button
+              onClick={() => useAuthStore.getState().logout()}
+              className="px-3 py-1.5 rounded-lg bg-slate-700 text-gray-300 hover:bg-slate-600 transition-colors text-sm"
+            >
+              Change Name
+            </button>
           </div>
         </div>
       </header>
@@ -122,6 +136,8 @@ export default function LobbyPage() {
           isLoading={isLoading}
         />
       )}
+
+      <HowToPlay isOpen={showHowToPlay} onClose={() => setShowHowToPlay(false)} />
     </div>
   );
 }

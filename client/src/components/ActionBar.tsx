@@ -31,15 +31,15 @@ export default function ActionBar({
   const hasHex = selectedHex !== null;
 
   const buyButtons: { label: string; cost: number; unitType: UnitType }[] = [
-    { label: 'Peasant', cost: UNIT_COST[UnitType.PEASANT], unitType: UnitType.PEASANT },
-    { label: 'Spearman', cost: UNIT_COST[UnitType.SPEARMAN], unitType: UnitType.SPEARMAN },
-    { label: 'Baron', cost: UNIT_COST[UnitType.BARON], unitType: UnitType.BARON },
-    { label: 'Knight', cost: UNIT_COST[UnitType.KNIGHT], unitType: UnitType.KNIGHT },
+    { label: '🧑‍🌾 Peasant', cost: UNIT_COST[UnitType.PEASANT], unitType: UnitType.PEASANT },
+    { label: '💂 Spear', cost: UNIT_COST[UnitType.SPEARMAN], unitType: UnitType.SPEARMAN },
+    { label: '🤴 Baron', cost: UNIT_COST[UnitType.BARON], unitType: UnitType.BARON },
+    { label: '🐴 Knight', cost: UNIT_COST[UnitType.KNIGHT], unitType: UnitType.KNIGHT },
   ];
 
   const buildButtons: { label: string; cost: number; structureType: StructureType }[] = [
-    { label: 'Tower', cost: STRUCTURE_COST[StructureType.TOWER], structureType: StructureType.TOWER },
-    { label: 'Strong Tower', cost: STRUCTURE_COST[StructureType.STRONG_TOWER], structureType: StructureType.STRONG_TOWER },
+    { label: '🏰 Tower', cost: STRUCTURE_COST[StructureType.TOWER], structureType: StructureType.TOWER },
+    { label: '🏯 Fort', cost: STRUCTURE_COST[StructureType.STRONG_TOWER], structureType: StructureType.STRONG_TOWER },
   ];
 
   const handleSurrender = () => {

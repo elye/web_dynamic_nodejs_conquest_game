@@ -1,16 +1,14 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { Hex, HexCoord } from '@conquest/shared';
-import { TerrainType } from '@conquest/shared';
+import { TerrainType, UnitType, StructureType } from '@conquest/shared';
 import { hexToPixel, pixelToHex, getHexPath, DEFAULT_HEX_SIZE } from '../utils/hexUtils';
 import {
   getPlayerColorById,
   NEUTRAL_HEX_FILL,
+  NEUTRAL_BORDER,
   WATER_HEX_FILL,
-  FOREST_COLOR,
-  MOUNTAIN_COLOR,
-  GRID_STROKE,
+  WATER_BORDER,
   SELECTED_STROKE,
-  VALID_TARGET_STROKE,
 } from '../utils/colors';
 
 interface HexGridProps {
@@ -46,6 +44,7 @@ export default function HexGrid({
   const lastMouseRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef<number>(0);
   const [hoveredHex, setHoveredHex] = useState<HexCoord | null>(null);
+  const hasAutoFittedRef = useRef(false);
 
   // Build a lookup for hexes and valid targets
   const hexMapRef = useRef<Map<string, Hex>>(new Map());
@@ -76,14 +75,15 @@ export default function HexGrid({
     };
   }, []);
 
-  // Get hex fill color
-  const getHexFill = useCallback(
-    (hex: Hex): string => {
-      if (hex.terrain === TerrainType.WATER) return WATER_HEX_FILL;
+  // Get hex colors (fill and border)
+  const getHexColors = useCallback(
+    (hex: Hex): { fill: string; border: string } => {
+      if (hex.terrain === TerrainType.WATER) return { fill: WATER_HEX_FILL, border: WATER_BORDER };
       if (hex.owner) {
-        return getPlayerColorById(hex.owner, playerIds).fill;
+        const pc = getPlayerColorById(hex.owner, playerIds);
+        return { fill: pc.fill, border: pc.border };
       }
-      return NEUTRAL_HEX_FILL;
+      return { fill: NEUTRAL_HEX_FILL, border: NEUTRAL_BORDER };
     },
     [playerIds],
   );
@@ -109,11 +109,13 @@ export default function HexGrid({
       const { x: cx, y: cy } = hexToPixel(hex.coord.q, hex.coord.r, size);
       const path = getHexPath(cx, cy, size);
 
+      // Determine colors
+      const colors = getHexColors(hex);
+
       // Fill
-      ctx.fillStyle = getHexFill(hex);
+      ctx.fillStyle = colors.fill;
       ctx.fill(path);
 
-      // Stroke
       const isSelected =
         selectedHex &&
         hex.coord.q === selectedHex.q &&
@@ -126,40 +128,77 @@ export default function HexGrid({
         hex.coord.q === hoveredHex.q &&
         hex.coord.r === hoveredHex.r;
 
+      // Hover overlay (drawn before icons so emojis appear on top)
+      if (isHovered && !isSelected) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.fill(path);
+      }
+
+      // Valid target overlay
+      if (isValidTarget) {
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
+        ctx.fill(path);
+      }
+
+      // Border
       if (isSelected) {
         ctx.strokeStyle = SELECTED_STROKE;
         ctx.lineWidth = 3;
-      } else if (isValidTarget) {
-        ctx.strokeStyle = VALID_TARGET_STROKE;
-        ctx.lineWidth = 2;
-      } else if (isHovered) {
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
       } else {
-        ctx.strokeStyle = GRID_STROKE;
+        ctx.strokeStyle = colors.border;
         ctx.lineWidth = 1;
       }
       ctx.stroke(path);
 
+      // Draw emoji icons LAST so they always appear on top of overlays
       // Tree
       if (hex.hasTree && hex.terrain !== TerrainType.WATER) {
-        drawTree(ctx, cx, cy, size);
+        ctx.fillStyle = '#000';
+        ctx.font = `${Math.round(size * 0.6)}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🌲', cx, cy);
       }
 
       // Mountain indicator
       if (hex.terrain === TerrainType.MOUNTAIN) {
-        drawMountain(ctx, cx, cy, size);
+        ctx.fillStyle = '#000';
+        ctx.font = `${Math.round(size * 0.6)}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⛰️', cx, cy);
       }
 
       // Structure
       if (hex.structure) {
-        drawStructure(ctx, cx, cy, size);
+        const emoji = hex.structure.type === StructureType.STRONG_TOWER ? '🏯' : '🏰';
+        ctx.fillStyle = '#000';
+        ctx.font = `${Math.round(size * 0.6)}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(emoji, cx, cy - size * 0.1);
       }
 
       // Unit
       if (hex.unit) {
-        const ownerColor = getPlayerColorById(hex.unit.owner, playerIds);
-        drawUnit(ctx, cx, cy, size, hex.unit.strength, ownerColor.base);
+        const emoji = getUnitEmoji(hex.unit.type);
+        ctx.fillStyle = '#000';
+        ctx.font = `${Math.round(size * 0.6)}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(emoji, cx, cy - size * 0.1);
+
+        // Strength badge
+        const badgeY = cy + size * 0.3;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.beginPath();
+        ctx.arc(cx, badgeY, size * 0.17, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#1e293b';
+        ctx.font = `bold ${Math.round(size * 0.25)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(hex.unit.strength), cx, badgeY);
       }
     }
 
@@ -176,7 +215,7 @@ export default function HexGrid({
       ctx.fillStyle = '#fff';
       ctx.fillText(text, 12, height - 14);
     }
-  }, [hexes, selectedHex, hoveredHex, getHexFill, playerIds]);
+  }, [hexes, selectedHex, hoveredHex, getHexColors]);
 
   // Animation loop
   useEffect(() => {
@@ -213,13 +252,48 @@ export default function HexGrid({
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.scale(devicePixelRatio, devicePixelRatio);
 
-    // Center camera on the hex grid
-    const cam = cameraRef.current;
-    cam.x = rect.width / 2;
-    cam.y = rect.height / 3;
-
     return () => observer.disconnect();
   }, []);
+
+  // Auto-fit camera to land hexes on initial load
+  useEffect(() => {
+    if (hasAutoFittedRef.current || hexes.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const landHexes = hexes.filter(h => h.terrain !== TerrainType.WATER);
+    if (landHexes.length === 0) return;
+
+    const size = DEFAULT_HEX_SIZE;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const hex of landHexes) {
+      const { x, y } = hexToPixel(hex.coord.q, hex.coord.r, size);
+      minX = Math.min(minX, x - size);
+      maxX = Math.max(maxX, x + size);
+      minY = Math.min(minY, y - size);
+      maxY = Math.max(maxY, y + size);
+    }
+
+    const gridWidth = maxX - minX;
+    const gridHeight = maxY - minY;
+    const gridCenterX = (minX + maxX) / 2;
+    const gridCenterY = (minY + maxY) / 2;
+
+    const rect = canvas.getBoundingClientRect();
+    const canvasW = rect.width;
+    const canvasH = rect.height;
+    const padding = 40;
+    const scaleX = (canvasW - padding * 2) / gridWidth;
+    const scaleY = (canvasH - padding * 2) / gridHeight;
+    const zoom = Math.min(scaleX, scaleY, MAX_ZOOM);
+
+    const cam = cameraRef.current;
+    cam.zoom = zoom;
+    cam.x = canvasW / 2 - gridCenterX * zoom;
+    cam.y = canvasH / 2 - gridCenterY * zoom;
+
+    hasAutoFittedRef.current = true;
+  }, [hexes]);
 
   // Mouse handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -236,7 +310,7 @@ export default function HexGrid({
         // Pan
         const dx = e.clientX - lastMouseRef.current.x;
         const dy = e.clientY - lastMouseRef.current.y;
-        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
           isDraggingRef.current = true;
         }
         cameraRef.current.x += dx;
@@ -322,7 +396,7 @@ export default function HexGrid({
     if (touches.length === 1) {
       const dx = touches[0].clientX - lastMouseRef.current.x;
       const dy = touches[0].clientY - lastMouseRef.current.y;
-      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) isDraggingRef.current = true;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDraggingRef.current = true;
       cameraRef.current.x += dx;
       cameraRef.current.y += dy;
       lastMouseRef.current = { x: touches[0].clientX, y: touches[0].clientY };
@@ -370,7 +444,7 @@ export default function HexGrid({
   );
 
   return (
-    <div ref={containerRef} className="w-full h-full relative">
+    <div ref={containerRef} className="w-full h-full relative" style={{ backgroundColor: '#0f172a' }}>
       <canvas
         ref={canvasRef}
         className="block touch-none"
@@ -386,89 +460,14 @@ export default function HexGrid({
   );
 }
 
-// ── Drawing helpers ──
+// ── Helpers ──
 
-function drawTree(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  size: number,
-) {
-  const r = size * 0.2;
-  ctx.fillStyle = FOREST_COLOR;
-  ctx.beginPath();
-  ctx.arc(cx, cy - size * 0.05, r, 0, Math.PI * 2);
-  ctx.fill();
-  // trunk
-  ctx.fillStyle = '#92400e';
-  ctx.fillRect(cx - 1.5, cy + r * 0.5 - size * 0.05, 3, size * 0.15);
-}
-
-function drawMountain(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  size: number,
-) {
-  const s = size * 0.3;
-  ctx.fillStyle = MOUNTAIN_COLOR;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - s);
-  ctx.lineTo(cx - s, cy + s * 0.5);
-  ctx.lineTo(cx + s, cy + s * 0.5);
-  ctx.closePath();
-  ctx.fill();
-  // snow cap
-  ctx.fillStyle = '#e5e7eb';
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - s);
-  ctx.lineTo(cx - s * 0.3, cy - s * 0.3);
-  ctx.lineTo(cx + s * 0.3, cy - s * 0.3);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawStructure(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  size: number,
-) {
-  const w = size * 0.2;
-  const h = size * 0.4;
-  ctx.fillStyle = '#78716c';
-  ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
-  // roof
-  ctx.fillStyle = '#57534e';
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - h / 2 - size * 0.1);
-  ctx.lineTo(cx - w / 2 - 2, cy - h / 2);
-  ctx.lineTo(cx + w / 2 + 2, cy - h / 2);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function drawUnit(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  size: number,
-  strength: number,
-  color: string,
-) {
-  const r = size * 0.3;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  // Strength number
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `bold ${Math.round(size * 0.3)}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String(strength), cx, cy);
+function getUnitEmoji(type: UnitType): string {
+  switch (type) {
+    case UnitType.PEASANT: return '🧑‍🌾';
+    case UnitType.SPEARMAN: return '💂';
+    case UnitType.BARON: return '🤴';
+    case UnitType.KNIGHT: return '🐴';
+    default: return '⚔️';
+  }
 }

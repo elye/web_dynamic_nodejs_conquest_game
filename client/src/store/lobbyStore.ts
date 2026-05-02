@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { GameRoom, GameState } from '@conquest/shared';
+import type { AiDifficulty, GameRoom, GameState } from '@conquest/shared';
 import * as api from '../utils/api';
 
 interface LobbyState {
@@ -9,10 +9,12 @@ interface LobbyState {
   isLoading: boolean;
   error: string | null;
   fetchGames: () => Promise<void>;
-  createGame: (body: { name: string; mapSize: string; maxPlayers: number; turnTimer: number; password?: string; aiPlayers?: { difficulty: string }[] }) => Promise<void>;
+  createGame: (body: { name: string; mapSize: string; maxPlayers: number; turnTimer: number; winCondition: string; password?: string }) => Promise<void>;
   joinGame: (gameId: string, password?: string) => Promise<void>;
   leaveGame: () => Promise<void>;
   startGame: () => Promise<void>;
+  addAI: (difficulty: AiDifficulty) => Promise<void>;
+  removeAI: (playerId: string) => Promise<void>;
   setCurrentRoom: (room: GameRoom | null) => void;
   fetchRoom: () => Promise<void>;
   setGameState: (gameState: GameState | null) => void;
@@ -74,6 +76,30 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     try {
       const gameState = await api.startGame(room.id);
       set({ gameState, isLoading: false });
+    } catch (e) {
+      set({ error: (e as Error).message, isLoading: false });
+    }
+  },
+
+  addAI: async (difficulty) => {
+    const room = get().currentRoom;
+    if (!room) return;
+    set({ isLoading: true, error: null });
+    try {
+      const updated = await api.addAI(room.id, difficulty);
+      set({ currentRoom: updated, isLoading: false });
+    } catch (e) {
+      set({ error: (e as Error).message, isLoading: false });
+    }
+  },
+
+  removeAI: async (playerId) => {
+    const room = get().currentRoom;
+    if (!room) return;
+    set({ isLoading: true, error: null });
+    try {
+      const updated = await api.removeAI(room.id, playerId);
+      set({ currentRoom: updated, isLoading: false });
     } catch (e) {
       set({ error: (e as Error).message, isLoading: false });
     }

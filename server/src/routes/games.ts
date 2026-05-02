@@ -18,7 +18,7 @@ function sanitizeRoom(room: GameRoom): Omit<GameRoom, 'passwordHash'> & { hasPas
 router.post('/', authMiddleware, (req, res) => {
   try {
     const playerId = req.playerId!;
-    const { name, mapSize, maxPlayers, turnTimer, winCondition, password, aiPlayers } = req.body;
+    const { name, mapSize, maxPlayers, turnTimer, password } = req.body;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       res.status(400).json({ error: 'Game name is required' });
@@ -54,20 +54,6 @@ router.post('/', authMiddleware, (req, res) => {
 
     const players: GameRoomPlayer[] = [hostPlayer];
 
-    // Add AI players if specified
-    if (Array.isArray(aiPlayers)) {
-      for (const ai of aiPlayers) {
-        const aiPlayer: GameRoomPlayer = {
-          id: uuidv4(),
-          name: `AI_${String(Math.floor(1000 + Math.random() * 9000))}`,
-          isReady: true,
-          isAI: true,
-          aiDifficulty: (ai.difficulty as AiDifficulty) ?? 'EASY',
-        };
-        players.push(aiPlayer);
-      }
-    }
-
     const room: GameRoom = {
       id: uuidv4(),
       name: name.trim().slice(0, 50),
@@ -75,8 +61,8 @@ router.post('/', authMiddleware, (req, res) => {
       settings: {
         mapWidth: dimensions.width,
         mapHeight: dimensions.height,
-        maxPlayers: Math.min(Math.max(Number(maxPlayers) || 4, 2), 6),
-        turnTimeLimit: Math.min(Math.max(Number(turnTimer) || 60000, 10000), 120000),
+        maxPlayers: Math.min(Math.max(Number(maxPlayers) || 6, 2), 6),
+        turnTimeLimit: Number(turnTimer) === 0 ? 0 : Math.min(Math.max(Number(turnTimer) || 60000, 10000), 120000),
         startingGold: 20,
       },
       players,
@@ -196,15 +182,19 @@ router.post('/:id/leave', authMiddleware, (req, res) => {
       return;
     }
 
-    const updates: Partial<GameRoom> = { players: remainingPlayers };
-
-    // If host leaves, assign new host
+    // If host leaves, delete the room entirely
     if (game.hostId === playerId) {
-      const newHost = remainingPlayers.find((p) => !p.isAI) ?? remainingPlayers[0];
-      updates.hostId = newHost.id;
+      gameStore.deleteGame(gameId);
+      broadcastToGame(gameId, {
+        type: ServerMessageType.LOBBY_UPDATE,
+        room: { ...game, passwordHash: null, players: remainingPlayers },
+        deleted: true,
+      });
+      res.json({ message: 'Game deleted (host left)' });
+      return;
     }
 
-    const updated = gameStore.updateGame(gameId, updates);
+    const updated = gameStore.updateGame(gameId, { players: remainingPlayers });
 
     broadcastToGame(gameId, {
       type: ServerMessageType.LOBBY_UPDATE,
@@ -214,6 +204,103 @@ router.post('/:id/leave', authMiddleware, (req, res) => {
     res.json(sanitizeRoom(updated!));
   } catch {
     res.status(500).json({ error: 'Failed to leave game' });
+  }
+});
+
+// POST /games/:id/add-ai — Add an AI player to the room
+router.post('/:id/add-ai', authMiddleware, (req, res) => {
+  try {
+    const playerId = req.playerId!;
+    const gameId = req.params.id as string;
+    const { difficulty } = req.body;
+    const game = gameStore.getGame(gameId);
+
+    if (!game) {
+      res.status(404).json({ error: 'Game not found' });
+      return;
+    }
+    if (game.hostId !== playerId) {
+      res.status(403).json({ error: 'Only the host can add AI players' });
+      return;
+    }
+    if (game.status !== GameStatus.LOBBY) {
+      res.status(400).json({ error: 'Game is not in lobby' });
+      return;
+    }
+    if (game.players.length >= game.settings.maxPlayers) {
+      res.status(400).json({ error: 'Game is full' });
+      return;
+    }
+
+    const validDifficulties = ['EASY', 'MEDIUM', 'HARD'];
+    const aiDiff = (typeof difficulty === 'string' ? difficulty.toUpperCase() : 'EASY') as AiDifficulty;
+    if (!validDifficulties.includes(aiDiff)) {
+      res.status(400).json({ error: 'Invalid difficulty. Use EASY, MEDIUM, or HARD' });
+      return;
+    }
+
+    const aiPlayer: GameRoomPlayer = {
+      id: uuidv4(),
+      name: `AI_${String(Math.floor(1000 + Math.random() * 9000))}`,
+      isReady: true,
+      isAI: true,
+      aiDifficulty: aiDiff,
+    };
+
+    const updated = gameStore.updateGame(gameId, {
+      players: [...game.players, aiPlayer],
+    });
+
+    broadcastToGame(gameId, {
+      type: ServerMessageType.LOBBY_UPDATE,
+      room: { ...updated!, passwordHash: null },
+    });
+
+    res.json(sanitizeRoom(updated!));
+  } catch {
+    res.status(500).json({ error: 'Failed to add AI player' });
+  }
+});
+
+// POST /games/:id/remove-ai — Remove an AI player from the room
+router.post('/:id/remove-ai', authMiddleware, (req, res) => {
+  try {
+    const playerId = req.playerId!;
+    const gameId = req.params.id as string;
+    const { playerId: aiPlayerId } = req.body;
+    const game = gameStore.getGame(gameId);
+
+    if (!game) {
+      res.status(404).json({ error: 'Game not found' });
+      return;
+    }
+    if (game.hostId !== playerId) {
+      res.status(403).json({ error: 'Only the host can remove AI players' });
+      return;
+    }
+    if (game.status !== GameStatus.LOBBY) {
+      res.status(400).json({ error: 'Game is not in lobby' });
+      return;
+    }
+
+    const aiPlayer = game.players.find((p) => p.id === aiPlayerId);
+    if (!aiPlayer || !aiPlayer.isAI) {
+      res.status(400).json({ error: 'AI player not found' });
+      return;
+    }
+
+    const updated = gameStore.updateGame(gameId, {
+      players: game.players.filter((p) => p.id !== aiPlayerId),
+    });
+
+    broadcastToGame(gameId, {
+      type: ServerMessageType.LOBBY_UPDATE,
+      room: { ...updated!, passwordHash: null },
+    });
+
+    res.json(sanitizeRoom(updated!));
+  } catch {
+    res.status(500).json({ error: 'Failed to remove AI player' });
   }
 });
 

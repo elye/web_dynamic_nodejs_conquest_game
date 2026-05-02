@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ServerMessageType } from '@conquest/shared';
-import type { GameRoom } from '@conquest/shared';
+import type { AiDifficulty, GameRoom } from '@conquest/shared';
 import { useAuthStore } from '../store/authStore';
 import { useLobbyStore } from '../store/lobbyStore';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -16,10 +16,11 @@ export default function GameRoomPage() {
   const playerId = useAuthStore((s) => s.playerId);
   const playerName = useAuthStore((s) => s.playerName);
   const token = useAuthStore((s) => s.token);
-  const { currentRoom, leaveGame, startGame, isLoading, setCurrentRoom, setGameState } = useLobbyStore();
+  const { currentRoom, leaveGame, startGame, addAI, removeAI, isLoading, setCurrentRoom, setGameState } = useLobbyStore();
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [msgId, setMsgId] = useState(0);
+  const [showAiMenu, setShowAiMenu] = useState(false);
 
   const roomId = currentRoom?.id ?? '';
   const { lastMessage } = useWebSocket(roomId, token ?? '');
@@ -28,7 +29,11 @@ export default function GameRoomPage() {
   useEffect(() => {
     if (!lastMessage) return;
     if (lastMessage.type === ServerMessageType.LOBBY_UPDATE) {
-      setCurrentRoom(lastMessage.room);
+      if (lastMessage.deleted) {
+        setCurrentRoom(null);
+      } else {
+        setCurrentRoom(lastMessage.room);
+      }
     } else if (lastMessage.type === ServerMessageType.GAME_STARTED) {
       setGameState(lastMessage.state);
     }
@@ -53,6 +58,12 @@ export default function GameRoomPage() {
   const isHost = currentRoom.hostId === playerId;
   const humanPlayers = currentRoom.players.filter((p) => !p.isAI);
   const canStart = humanPlayers.length >= 2 || currentRoom.players.length >= 2;
+  const roomFull = currentRoom.players.length >= currentRoom.settings.maxPlayers;
+
+  const handleAddAI = (difficulty: AiDifficulty) => {
+    addAI(difficulty);
+    setShowAiMenu(false);
+  };
 
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,18 +124,61 @@ export default function GameRoomPage() {
                     </span>
                   )}
                 </div>
-                <span className={`text-xs px-2 py-1 rounded ${
-                  p.isReady
-                    ? 'bg-green-900/50 text-green-400'
-                    : 'bg-gray-700 text-gray-400'
-                }`}>
-                  {p.isReady ? 'Ready' : 'Not Ready'}
-                </span>
+                <div className="flex items-center gap-2">
+                  {isHost && p.isAI && (
+                    <button
+                      onClick={() => removeAI(p.id)}
+                      disabled={isLoading}
+                      className="text-xs px-2 py-1 rounded bg-red-900/50 text-red-400 hover:bg-red-800/60 transition-colors disabled:opacity-40"
+                    >
+                      Remove
+                    </button>
+                  )}
+                  <span className={`text-xs px-2 py-1 rounded ${
+                    p.isReady
+                      ? 'bg-green-900/50 text-green-400'
+                      : 'bg-gray-700 text-gray-400'
+                  }`}>
+                    {p.isReady ? 'Ready' : 'Not Ready'}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
 
           <div className="p-4 border-t border-slate-700 flex gap-3">
+            {isHost && !roomFull && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowAiMenu(!showAiMenu)}
+                  className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-500 transition-colors"
+                >
+                  Add AI
+                </button>
+                {showAiMenu && (
+                  <div className="absolute bottom-full mb-2 left-0 bg-slate-700 border border-slate-600 rounded-lg shadow-xl overflow-hidden z-10">
+                    <button
+                      onClick={() => handleAddAI('EASY' as AiDifficulty)}
+                      className="block w-full px-4 py-2 text-sm text-left text-white hover:bg-slate-600 transition-colors"
+                    >
+                      Easy
+                    </button>
+                    <button
+                      onClick={() => handleAddAI('MEDIUM' as AiDifficulty)}
+                      className="block w-full px-4 py-2 text-sm text-left text-white hover:bg-slate-600 transition-colors"
+                    >
+                      Medium
+                    </button>
+                    <button
+                      onClick={() => handleAddAI('HARD' as AiDifficulty)}
+                      className="block w-full px-4 py-2 text-sm text-left text-white hover:bg-slate-600 transition-colors"
+                    >
+                      Hard
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {isHost && (
               <button
                 onClick={() => startGame()}
