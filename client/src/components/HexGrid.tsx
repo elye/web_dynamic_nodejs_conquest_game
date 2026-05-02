@@ -134,17 +134,18 @@ export default function HexGrid({
         ctx.fill(path);
       }
 
-      // Valid target overlay
+      // Valid target — bold black border outline
       if (isValidTarget) {
-        ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
-        ctx.fill(path);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.stroke(path);
       }
 
       // Border
       if (isSelected) {
         ctx.strokeStyle = SELECTED_STROKE;
         ctx.lineWidth = 3;
-      } else {
+      } else if (!isValidTarget) {
         ctx.strokeStyle = colors.border;
         ctx.lineWidth = 1;
       }
