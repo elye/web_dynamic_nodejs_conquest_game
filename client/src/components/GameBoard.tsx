@@ -175,6 +175,7 @@ export default function GameBoard({
             selectedHex={selectedHex}
             onHexClick={onHexClick}
             currentPlayerId={currentPlayerId}
+            currentTurnPlayerId={gameState.currentTurnPlayerId}
             playerIds={playerIds}
             validTargets={validMoves}
           />

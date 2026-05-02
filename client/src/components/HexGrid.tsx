@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import type { Hex, HexCoord } from '@conquest/shared';
 import { TerrainType, UnitType, StructureType } from '@conquest/shared';
-import { hexToPixel, pixelToHex, getHexPath, DEFAULT_HEX_SIZE } from '../utils/hexUtils';
+import { hexToPixel, pixelToHex, getHexPath, getHexCorners, getHexNeighbors, DEFAULT_HEX_SIZE } from '../utils/hexUtils';
 import {
   getPlayerColorById,
   NEUTRAL_HEX_FILL,
@@ -16,6 +16,7 @@ interface HexGridProps {
   selectedHex: HexCoord | null;
   onHexClick: (q: number, r: number) => void;
   currentPlayerId: string | null;
+  currentTurnPlayerId?: string | null;
   playerIds: string[];
   validTargets?: HexCoord[];
 }
@@ -34,6 +35,7 @@ export default function HexGrid({
   selectedHex,
   onHexClick,
   currentPlayerId,
+  currentTurnPlayerId,
   playerIds,
   validTargets = [],
 }: HexGridProps) {
@@ -134,18 +136,18 @@ export default function HexGrid({
         ctx.fill(path);
       }
 
-      // Valid target — bold black border outline
-      if (isValidTarget) {
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.stroke(path);
+      // Dim non-target tiles when valid targets exist (unit selected)
+      const hasTargets = validTargetSetRef.current.size > 0;
+      if (hasTargets && !isValidTarget && !isSelected) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fill(path);
       }
 
       // Border
       if (isSelected) {
         ctx.strokeStyle = SELECTED_STROKE;
         ctx.lineWidth = 3;
-      } else if (!isValidTarget) {
+      } else {
         ctx.strokeStyle = colors.border;
         ctx.lineWidth = 1;
       }
@@ -203,6 +205,49 @@ export default function HexGrid({
       }
     }
 
+    // Draw territory borders for the current turn player
+    // Only draw on edges where the neighbor is NOT owned by the same player
+    const currentTurnPlayer = currentTurnPlayerId;
+    if (currentTurnPlayer) {
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+
+      // The 6 neighbor directions for axial coords, matching corner edge order for pointy-top:
+      // Edge between corner[i] and corner[(i+1)%6] faces neighbor direction[i]
+      const NEIGHBOR_DIRS = [
+        { dq: 1, dr: 0 },    // edge 0→1: east
+        { dq: 0, dr: 1 },    // edge 1→2: southeast
+        { dq: -1, dr: 1 },   // edge 2→3: southwest
+        { dq: -1, dr: 0 },   // edge 3→4: west
+        { dq: 0, dr: -1 },   // edge 4→5: northwest
+        { dq: 1, dr: -1 },   // edge 5→0: northeast
+      ];
+
+      for (const hex of hexes) {
+        if (hex.owner !== currentTurnPlayer) continue;
+        const { x: cx, y: cy } = hexToPixel(hex.coord.q, hex.coord.r, size);
+        const corners = getHexCorners(cx, cy, size);
+
+        for (let i = 0; i < 6; i++) {
+          const dir = NEIGHBOR_DIRS[i];
+          const nq = hex.coord.q + dir.dq;
+          const nr = hex.coord.r + dir.dr;
+          const neighbor = hexMapRef.current.get(`${nq},${nr}`);
+
+          // Draw edge if neighbor doesn't exist or isn't owned by same player
+          if (!neighbor || neighbor.owner !== currentTurnPlayer) {
+            const c1 = corners[i];
+            const c2 = corners[(i + 1) % 6];
+            ctx.beginPath();
+            ctx.moveTo(c1.x, c1.y);
+            ctx.lineTo(c2.x, c2.y);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
     ctx.restore();
 
     // Hovered hex tooltip
@@ -216,7 +261,7 @@ export default function HexGrid({
       ctx.fillStyle = '#fff';
       ctx.fillText(text, 12, height - 14);
     }
-  }, [hexes, selectedHex, hoveredHex, getHexColors]);
+  }, [hexes, selectedHex, hoveredHex, getHexColors, currentTurnPlayerId]);
 
   // Animation loop
   useEffect(() => {
