@@ -357,6 +357,9 @@ export function buyUnit(
 
   province.gold -= cost;
 
+  // Remove tree if present (unit chops it down)
+  targetHex.hasTree = false;
+
   targetHex.unit = {
     id: randomUUID(),
     type: unitType,
