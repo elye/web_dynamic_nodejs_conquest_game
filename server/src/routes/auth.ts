@@ -13,7 +13,7 @@ router.post('/guest', (req, res) => {
     const sanitized = rawName.replace(/[<>"'&]/g, '').slice(0, 20);
     const name = sanitized || `Guest_${String(Math.floor(1000 + Math.random() * 9000))}`;
 
-    const token = jwt.sign({ playerId }, config.jwtSecret, { expiresIn: '24h' });
+    const token = jwt.sign({ playerId, name }, config.jwtSecret, { expiresIn: '24h' });
 
     sessionStore.createSession(playerId, name, token);
 
