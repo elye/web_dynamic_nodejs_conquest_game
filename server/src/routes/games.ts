@@ -5,7 +5,8 @@ import { gameStore } from '../store/gameStore.js';
 import { sessionStore } from '../store/sessionStore.js';
 import { startGame } from '../game/engine.js';
 import { authMiddleware } from './middleware/auth.js';
-import { broadcastToGame } from '../ws/index.js';
+import { broadcastToGame, startTurnTimer } from '../ws/index.js';
+import { scheduleAITurnIfNeeded } from '../ai/aiEngine.js';
 
 const router = Router();
 
@@ -330,6 +331,9 @@ router.post('/:id/start', authMiddleware, (req, res) => {
       type: ServerMessageType.GAME_STARTED,
       state: gameState,
     });
+
+    startTurnTimer(gameState, gameId);
+    scheduleAITurnIfNeeded(gameState);
 
     res.json(gameState);
   } catch (err) {
