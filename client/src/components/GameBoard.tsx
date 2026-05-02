@@ -72,6 +72,9 @@ export default function GameBoard({
             const totalGold = gameState.provinces
               .filter((p) => p.owner === player.id)
               .reduce((sum, p) => sum + p.gold, 0);
+            const netIncome = gameState.provinces
+              .filter((p) => p.owner === player.id)
+              .reduce((sum, p) => sum + (p.income - p.upkeep), 0);
             const isCurrentTurn = player.id === gameState.currentTurnPlayerId;
             return (
               <div
@@ -107,6 +110,9 @@ export default function GameBoard({
                 <div className="mt-1 text-xs text-slate-700 space-y-0.5">
                   <div>Territory: {territoryCount}</div>
                   <div>Gold: {totalGold}</div>
+                  <div className={netIncome >= 0 ? 'text-green-800' : 'text-red-800'}>
+                    Net: {netIncome >= 0 ? '+' : ''}{netIncome}/turn
+                  </div>
                   <div className="flex items-center gap-1">
                     <span
                       className={`w-2 h-2 rounded-full ${player.isConnected ? 'bg-green-600' : 'bg-red-600'}`}
