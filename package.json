@@ -13,5 +13,8 @@
     "dev:client": "npm run dev -w client",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
     "clean": "rm -rf node_modules shared/dist server/dist client/dist shared/node_modules server/node_modules client/node_modules"
+  },
+  "dependencies": {
+    "@esbuild/darwin-arm64": "^0.27.7"
   }
 }

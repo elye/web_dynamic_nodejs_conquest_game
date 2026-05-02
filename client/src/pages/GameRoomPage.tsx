@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { ServerMessageType } from '@conquest/shared';
 import type { GameRoom } from '@conquest/shared';
 import { useAuthStore } from '../store/authStore';
 import { useLobbyStore } from '../store/lobbyStore';
+import { useWebSocket } from '../hooks/useWebSocket';
+import * as api from '../utils/api';
 
 interface ChatMessage {
   id: number;
@@ -12,10 +15,38 @@ interface ChatMessage {
 export default function GameRoomPage() {
   const playerId = useAuthStore((s) => s.playerId);
   const playerName = useAuthStore((s) => s.playerName);
-  const { currentRoom, leaveGame, startGame, isLoading } = useLobbyStore();
+  const token = useAuthStore((s) => s.token);
+  const { currentRoom, leaveGame, startGame, isLoading, setCurrentRoom, setGameState } = useLobbyStore();
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [msgId, setMsgId] = useState(0);
+
+  const roomId = currentRoom?.id ?? '';
+  const { lastMessage } = useWebSocket(roomId, token ?? '');
+
+  // Handle WS messages
+  useEffect(() => {
+    if (!lastMessage) return;
+    if (lastMessage.type === ServerMessageType.LOBBY_UPDATE) {
+      setCurrentRoom(lastMessage.room);
+    } else if (lastMessage.type === ServerMessageType.GAME_STARTED) {
+      setGameState(lastMessage.state);
+    }
+  }, [lastMessage, setCurrentRoom, setGameState]);
+
+  // Polling fallback (5s)
+  useEffect(() => {
+    if (!roomId) return;
+    const interval = setInterval(async () => {
+      try {
+        const updated = await api.getGame(roomId);
+        setCurrentRoom(updated);
+      } catch {
+        // ignore
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [roomId, setCurrentRoom]);
 
   if (!currentRoom) return null;
 

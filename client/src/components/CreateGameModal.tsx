@@ -6,11 +6,9 @@ interface CreateGameModalProps {
   onClose: () => void;
   onCreate: (settings: {
     name: string;
-    mapWidth: number;
-    mapHeight: number;
+    mapSize: string;
     maxPlayers: number;
-    turnTimeLimit: number;
-    startingGold: number;
+    turnTimer: number;
     password?: string;
     aiPlayers?: { difficulty: string }[];
   }) => void;
@@ -18,9 +16,9 @@ interface CreateGameModalProps {
 }
 
 const MAP_SIZE_OPTIONS = [
-  { label: 'Small', ...MAP_SIZES.SMALL },
-  { label: 'Medium', ...MAP_SIZES.MEDIUM },
-  { label: 'Large', ...MAP_SIZES.LARGE },
+  { key: 'SMALL', label: 'Small', ...MAP_SIZES.SMALL },
+  { key: 'MEDIUM', label: 'Medium', ...MAP_SIZES.MEDIUM },
+  { key: 'LARGE', label: 'Large', ...MAP_SIZES.LARGE },
 ] as const;
 
 const TURN_TIMER_OPTIONS = [
@@ -45,11 +43,9 @@ export default function CreateGameModal({ onClose, onCreate, isLoading }: Create
     const aiPlayers = Array.from({ length: aiCount }, () => ({ difficulty: aiDifficulty }));
     onCreate({
       name: name || 'New Game',
-      mapWidth: size.width,
-      mapHeight: size.height,
+      mapSize: size.key,
       maxPlayers,
-      turnTimeLimit: turnTimer,
-      startingGold: 20,
+      turnTimer: turnTimer,
       password: password || undefined,
       aiPlayers: aiPlayers.length > 0 ? aiPlayers : undefined,
     });

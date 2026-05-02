@@ -1,4 +1,4 @@
-import type { GameRoom, GameState, GameSettings } from '@conquest/shared';
+import type { GameRoom, GameState } from '@conquest/shared';
 
 const API_BASE = '/api';
 
@@ -38,8 +38,8 @@ export function createGuestSession(): Promise<{ playerId: string; token: string;
   return request('POST', '/auth/guest');
 }
 
-export function createGame(settings: GameSettings & { name: string; password?: string; aiPlayers?: { difficulty: string }[] }): Promise<GameRoom> {
-  return request('POST', '/games', settings);
+export function createGame(body: { name: string; mapSize: string; maxPlayers: number; turnTimer: number; password?: string; aiPlayers?: { difficulty: string }[] }): Promise<GameRoom> {
+  return request('POST', '/games', body);
 }
 
 export function listGames(): Promise<GameRoom[]> {

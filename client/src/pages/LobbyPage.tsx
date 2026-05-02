@@ -77,7 +77,7 @@ export default function LobbyPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3">
                   <h3 className="font-medium text-white truncate">{room.name}</h3>
-                  {room.passwordHash && (
+                  {(room as unknown as { hasPassword: boolean }).hasPassword && (
                     <span className="text-xs bg-yellow-900/50 text-yellow-400 px-2 py-0.5 rounded">
                       🔒
                     </span>

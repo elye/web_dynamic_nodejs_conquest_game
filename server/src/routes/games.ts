@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { GameStatus, type AiDifficulty, type GameRoom, type GameRoomPlayer } from '@conquest/shared';
+import { GameStatus, ServerMessageType, type AiDifficulty, type GameRoom, type GameRoomPlayer } from '@conquest/shared';
 import { gameStore } from '../store/gameStore.js';
 import { sessionStore } from '../store/sessionStore.js';
 import { startGame } from '../game/engine.js';
 import { authMiddleware } from './middleware/auth.js';
+import { broadcastToGame } from '../ws/index.js';
 
 const router = Router();
 
@@ -158,6 +159,11 @@ router.post('/:id/join', authMiddleware, (req, res) => {
       players: [...game.players, newPlayer],
     });
 
+    broadcastToGame(gameId, {
+      type: ServerMessageType.LOBBY_UPDATE,
+      room: { ...updated!, passwordHash: null },
+    });
+
     res.json(sanitizeRoom(updated!));
   } catch {
     res.status(500).json({ error: 'Failed to join game' });
@@ -199,6 +205,12 @@ router.post('/:id/leave', authMiddleware, (req, res) => {
     }
 
     const updated = gameStore.updateGame(gameId, updates);
+
+    broadcastToGame(gameId, {
+      type: ServerMessageType.LOBBY_UPDATE,
+      room: { ...updated!, passwordHash: null },
+    });
+
     res.json(sanitizeRoom(updated!));
   } catch {
     res.status(500).json({ error: 'Failed to leave game' });
@@ -226,6 +238,12 @@ router.post('/:id/start', authMiddleware, (req, res) => {
     }
 
     const gameState = startGame(gameId);
+
+    broadcastToGame(gameId, {
+      type: ServerMessageType.GAME_STARTED,
+      state: gameState,
+    });
+
     res.json(gameState);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to start game';

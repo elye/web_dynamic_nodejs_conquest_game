@@ -12,11 +12,11 @@ export function useWebSocket(gameId: string, token: string) {
   const unmountedRef = useRef(false);
 
   const connect = useCallback(() => {
-    if (unmountedRef.current) return;
+    if (unmountedRef.current || !gameId) return;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const url = `${protocol}//${host}/ws/game/${encodeURIComponent(gameId)}?token=${encodeURIComponent(token)}`;
+    const url = `${protocol}//${host}/ws?gameId=${encodeURIComponent(gameId)}&token=${encodeURIComponent(token)}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { GameRoom, GameSettings, GameState } from '@conquest/shared';
+import type { GameRoom, GameState } from '@conquest/shared';
 import * as api from '../utils/api';
 
 interface LobbyState {
@@ -9,11 +9,13 @@ interface LobbyState {
   isLoading: boolean;
   error: string | null;
   fetchGames: () => Promise<void>;
-  createGame: (settings: GameSettings & { name: string; password?: string; aiPlayers?: { difficulty: string }[] }) => Promise<void>;
+  createGame: (body: { name: string; mapSize: string; maxPlayers: number; turnTimer: number; password?: string; aiPlayers?: { difficulty: string }[] }) => Promise<void>;
   joinGame: (gameId: string, password?: string) => Promise<void>;
   leaveGame: () => Promise<void>;
   startGame: () => Promise<void>;
   setCurrentRoom: (room: GameRoom | null) => void;
+  fetchRoom: () => Promise<void>;
+  setGameState: (gameState: GameState | null) => void;
 }
 
 export const useLobbyStore = create<LobbyState>((set, get) => ({
@@ -33,10 +35,10 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     }
   },
 
-  createGame: async (settings) => {
+  createGame: async (body) => {
     set({ isLoading: true, error: null });
     try {
-      const room = await api.createGame(settings);
+      const room = await api.createGame(body);
       set({ currentRoom: room, isLoading: false });
     } catch (e) {
       set({ error: (e as Error).message, isLoading: false });
@@ -78,4 +80,17 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
   },
 
   setCurrentRoom: (room) => set({ currentRoom: room }),
+
+  fetchRoom: async () => {
+    const room = get().currentRoom;
+    if (!room) return;
+    try {
+      const updated = await api.getGame(room.id);
+      set({ currentRoom: updated });
+    } catch {
+      // Background poll — silently fail
+    }
+  },
+
+  setGameState: (gameState) => set({ gameState }),
 }));

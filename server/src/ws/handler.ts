@@ -126,6 +126,15 @@ function handleConnection(ws: WebSocket, playerId: string, gameId: string): void
       type: ServerMessageType.GAME_STATE_FULL,
       state: gameState,
     });
+  } else {
+    // Lobby phase — send current room state
+    const room = gameStore.getGame(gameId);
+    if (room) {
+      sendToPlayer(playerId, {
+        type: ServerMessageType.LOBBY_UPDATE,
+        room: { ...room, passwordHash: null },
+      });
+    }
   }
 
   ws.on('message', (data) => {
@@ -143,10 +152,15 @@ function handleConnection(ws: WebSocket, playerId: string, gameId: string): void
   });
 
   ws.on('close', () => {
+    // Only handle disconnect if this ws is still the active connection
+    const client = clients.get(playerId);
+    if (!client || client.ws !== ws) return;
     handleDisconnect(playerId, gameId);
   });
 
   ws.on('error', () => {
+    const client = clients.get(playerId);
+    if (!client || client.ws !== ws) return;
     handleDisconnect(playerId, gameId);
   });
 }
