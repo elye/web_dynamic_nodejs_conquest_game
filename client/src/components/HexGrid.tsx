@@ -203,6 +203,14 @@ export default function HexGrid({
         ctx.textBaseline = 'middle';
         ctx.fillText(String(hex.unit.strength), cx, badgeY);
       }
+
+      // Death marker (starvation)
+      if (hex.deathMarker === 'starvation') {
+        ctx.font = `${Math.round(size * 0.55)}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('☠️', cx, cy);
+      }
     }
 
     // Draw territory borders for the current turn player

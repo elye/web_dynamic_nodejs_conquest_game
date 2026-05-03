@@ -74,7 +74,8 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
           {/* Economy */}
           <section>
             <h3 className="text-white font-semibold mb-1">💰 Economy</h3>
-            <p>Each hex = 1 gold/turn. Units cost upkeep. Go bankrupt = units die. Trees block income.</p>
+            <p>Each hex = 1 gold/turn. Units cost upkeep. Trees block income.</p>
+            <p className="mt-1">If a province&apos;s upkeep exceeds its income and gold runs out, all units in that province die from starvation. A ☠️ marker appears on hexes where units were lost.</p>
           </section>
 
           {/* Structures */}

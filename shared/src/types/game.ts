@@ -19,6 +19,7 @@ export interface Hex {
   unit: Unit | null;
   structure: Structure | null;
   hasTree: boolean;
+  deathMarker?: 'starvation';
 }
 
 // ── Units ──

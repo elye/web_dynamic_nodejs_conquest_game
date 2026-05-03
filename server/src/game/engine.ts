@@ -457,6 +457,13 @@ export function endTurn(gameState: GameState): GameState {
     (p) => p.owner === currentPlayerId,
   );
 
+  // Clear old death markers
+  for (const hex of gameState.hexes) {
+    if (hex.deathMarker) {
+      delete hex.deathMarker;
+    }
+  }
+
   for (const province of playerProvinces) {
     province.gold += province.income;
     province.gold -= province.upkeep;
@@ -468,6 +475,7 @@ export function endTurn(gameState: GameState): GameState {
         const hex = lookup.get(coordKey(coord.q, coord.r));
         if (hex?.unit && hex.unit.owner === currentPlayerId) {
           hex.unit = null;
+          hex.deathMarker = 'starvation';
         }
       }
       province.gold = 0;
