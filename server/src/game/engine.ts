@@ -224,6 +224,30 @@ export function moveUnit(
     }
   }
 
+  // Handle friendly unit merge (move onto own unit)
+  if (targetHex.owner === playerId && targetHex.unit && targetHex.unit.owner === playerId) {
+    const mergeKey = `${targetHex.unit.type}+${unit.type}`;
+    const mergedType = UNIT_MERGE_MAP[mergeKey];
+    if (!mergedType) {
+      throw new Error('Cannot merge these units');
+    }
+
+    // Merge: upgrade target unit, remove source unit
+    sourceHex.unit = null;
+    targetHex.unit.type = mergedType;
+    targetHex.unit.strength = UNIT_STRENGTH[mergedType];
+    targetHex.unit.upkeep = UNIT_UPKEEP[mergedType];
+    targetHex.unit.hasMoved = true;
+
+    recalculateAllProvinces(gameState);
+    for (const player of gameState.players) {
+      player.provinces = gameState.provinces
+        .filter((p) => p.owner === player.id)
+        .map((p) => p.id);
+    }
+    return gameState;
+  }
+
   // Handle combat if enemy hex
   if (targetHex.owner !== null && targetHex.owner !== playerId) {
     if (targetHex.unit) {
