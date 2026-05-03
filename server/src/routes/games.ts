@@ -305,6 +305,81 @@ router.post('/:id/remove-ai', authMiddleware, (req, res) => {
   }
 });
 
+// POST /games/solo — Create and immediately start a solo game vs AI
+router.post('/solo', authMiddleware, (req, res) => {
+  try {
+    const playerId = req.playerId!;
+    const { mapSize, aiCount, aiDifficulty } = req.body;
+
+    const sizeMap: Record<string, { width: number; height: number }> = {
+      SMALL: { width: 10, height: 10 },
+      MEDIUM: { width: 15, height: 15 },
+      LARGE: { width: 20, height: 20 },
+    };
+
+    const dimensions = sizeMap[(typeof mapSize === 'string' ? mapSize : 'MEDIUM').toUpperCase()];
+    if (!dimensions) {
+      res.status(400).json({ error: 'Invalid mapSize. Use SMALL, MEDIUM, or LARGE' });
+      return;
+    }
+
+    const count = Math.min(Math.max(Number(aiCount) || 1, 1), 5);
+
+    const validDifficulties = ['EASY', 'MEDIUM', 'HARD'];
+    const diff = (typeof aiDifficulty === 'string' ? aiDifficulty.toUpperCase() : 'MEDIUM') as AiDifficulty;
+    if (!validDifficulties.includes(diff)) {
+      res.status(400).json({ error: 'Invalid aiDifficulty. Use EASY, MEDIUM, or HARD' });
+      return;
+    }
+
+    const session = sessionStore.getSession(playerId);
+    const playerName = session?.name ?? 'Unknown';
+
+    const hostPlayer: GameRoomPlayer = {
+      id: playerId,
+      name: playerName,
+      isReady: true,
+      isAI: false,
+    };
+
+    const aiPlayers: GameRoomPlayer[] = Array.from({ length: count }, () => ({
+      id: uuidv4(),
+      name: `AI_${String(Math.floor(1000 + Math.random() * 9000))}`,
+      isReady: true,
+      isAI: true,
+      aiDifficulty: diff,
+    }));
+
+    const room: GameRoom = {
+      id: uuidv4(),
+      name: `Solo_${playerName}_${Date.now()}`,
+      hostId: playerId,
+      settings: {
+        mapWidth: dimensions.width,
+        mapHeight: dimensions.height,
+        maxPlayers: count + 1,
+        turnTimeLimit: 0,
+        startingGold: 20,
+      },
+      players: [hostPlayer, ...aiPlayers],
+      passwordHash: null,
+      status: GameStatus.LOBBY,
+      createdAt: Date.now(),
+    };
+
+    gameStore.createGame(room);
+
+    const gameState = startGame(room.id);
+    startTurnTimer(gameState, room.id);
+    scheduleAITurnIfNeeded(gameState);
+
+    res.status(201).json(gameState);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to create solo game';
+    res.status(500).json({ error: message });
+  }
+});
+
 // POST /games/:id/start — Start the game
 router.post('/:id/start', authMiddleware, (req, res) => {
   try {

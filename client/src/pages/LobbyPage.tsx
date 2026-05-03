@@ -3,12 +3,14 @@ import { GameStatus } from '@conquest/shared';
 import { useAuthStore } from '../store/authStore';
 import { useLobbyStore } from '../store/lobbyStore';
 import CreateGameModal from '../components/CreateGameModal';
+import SoloGameModal from '../components/SoloGameModal';
 import HowToPlay from '../components/HowToPlay';
 
 export default function LobbyPage() {
   const playerName = useAuthStore((s) => s.playerName);
-  const { games, isLoading, error, fetchGames, createGame, joinGame } = useLobbyStore();
+  const { games, isLoading, error, fetchGames, createGame, joinGame, startSoloGame } = useLobbyStore();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showSoloModal, setShowSoloModal] = useState(false);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
 
   useEffect(() => {
@@ -20,6 +22,11 @@ export default function LobbyPage() {
   const handleCreate = async (settings: Parameters<typeof createGame>[0]) => {
     await createGame(settings);
     setShowCreateModal(false);
+  };
+
+  const handleSoloStart = async (settings: { mapSize: string; aiCount: number; aiDifficulty: string }) => {
+    await startSoloGame(settings.mapSize, settings.aiCount, settings.aiDifficulty);
+    setShowSoloModal(false);
   };
 
   return (
@@ -59,6 +66,12 @@ export default function LobbyPage() {
               className="px-4 py-2 rounded-lg bg-slate-700 text-gray-300 hover:bg-slate-600 disabled:opacity-50 transition-colors text-sm"
             >
               Refresh
+            </button>
+            <button
+              onClick={() => setShowSoloModal(true)}
+              className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-500 transition-colors text-sm"
+            >
+              Solo Game
             </button>
             <button
               onClick={() => setShowCreateModal(true)}
@@ -133,6 +146,14 @@ export default function LobbyPage() {
         <CreateGameModal
           onClose={() => setShowCreateModal(false)}
           onCreate={handleCreate}
+          isLoading={isLoading}
+        />
+      )}
+
+      {showSoloModal && (
+        <SoloGameModal
+          onClose={() => setShowSoloModal(false)}
+          onStart={handleSoloStart}
           isLoading={isLoading}
         />
       )}

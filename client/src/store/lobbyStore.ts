@@ -15,6 +15,7 @@ interface LobbyState {
   startGame: () => Promise<void>;
   addAI: (difficulty: AiDifficulty) => Promise<void>;
   removeAI: (playerId: string) => Promise<void>;
+  startSoloGame: (mapSize: string, aiCount: number, aiDifficulty: string) => Promise<void>;
   setCurrentRoom: (room: GameRoom | null) => void;
   fetchRoom: () => Promise<void>;
   setGameState: (gameState: GameState | null) => void;
@@ -100,6 +101,16 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     try {
       const updated = await api.removeAI(room.id, playerId);
       set({ currentRoom: updated, isLoading: false });
+    } catch (e) {
+      set({ error: (e as Error).message, isLoading: false });
+    }
+  },
+
+  startSoloGame: async (mapSize, aiCount, aiDifficulty) => {
+    set({ isLoading: true, error: null });
+    try {
+      const gameState = await api.startSoloGame({ mapSize, aiCount, aiDifficulty });
+      set({ gameState, isLoading: false });
     } catch (e) {
       set({ error: (e as Error).message, isLoading: false });
     }

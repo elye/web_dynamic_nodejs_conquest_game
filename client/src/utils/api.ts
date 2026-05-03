@@ -70,6 +70,10 @@ export function removeAI(gameId: string, playerId: string): Promise<GameRoom> {
   return request('POST', `/games/${encodeURIComponent(gameId)}/remove-ai`, { playerId });
 }
 
+export function startSoloGame(body: { mapSize: string; aiCount: number; aiDifficulty: string }): Promise<GameState> {
+  return request('POST', '/games/solo', body);
+}
+
 export function ping(gameId: string, playerId: string): Promise<void> {
   return request('GET', `/ping?gameId=${encodeURIComponent(gameId)}&playerId=${encodeURIComponent(playerId)}`);
 }
