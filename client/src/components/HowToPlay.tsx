@@ -74,8 +74,12 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
           {/* Economy */}
           <section>
             <h3 className="text-white font-semibold mb-1">💰 Economy</h3>
-            <p>Each hex = 1 gold/turn. Units cost upkeep. Trees block income.</p>
-            <p className="mt-1">If a province&apos;s upkeep exceeds its income and gold runs out, all units in that province die from starvation. A ☠️ marker appears on hexes where units were lost.</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Each hex = 1 gold/turn income.</li>
+              <li>Units cost upkeep every turn.</li>
+              <li>🌲 Trees block income (0 gold). Move a unit onto them to chop.</li>
+              <li>☠️ If upkeep exceeds income and gold runs out, units starve.</li>
+            </ul>
           </section>
 
           {/* Structures */}
@@ -84,17 +88,6 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
             <ul className="space-y-1">
               <li>🏰 <strong>Tower</strong> (15g) — +1 defense to hex and neighbors</li>
               <li>🏯 <strong>Strong Tower</strong> (35g) — +2 defense, needs Knight to capture</li>
-            </ul>
-          </section>
-
-          {/* Trees */}
-          <section>
-            <h3 className="text-white font-semibold mb-1">🌲 Trees</h3>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Trees block income — a hex with a tree earns 0 gold.</li>
-              <li>Move a unit onto a tree hex to chop it down.</li>
-              <li>Trees spread naturally to empty adjacent hexes at the end of each round.</li>
-              <li>Trees cannot grow on hexes with units or structures.</li>
             </ul>
           </section>
 
