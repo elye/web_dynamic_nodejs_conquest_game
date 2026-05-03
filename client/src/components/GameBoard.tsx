@@ -184,6 +184,10 @@ export default function GameBoard({
           {actionsAvailable && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
               <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-2">
+                {/* Turn status */}
+                <span className={`text-xs font-semibold mr-2 ${isMyTurn ? 'text-green-400' : 'text-red-400'}`}>
+                  {isMyTurn ? '✓ Your turn' : '✗ Wait'}
+                </span>
 
 
                 {/* Province gold indicator */}
