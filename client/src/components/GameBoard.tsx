@@ -19,6 +19,8 @@ interface GameBoardProps {
   onBuyUnit?: (unitType: UnitType, hex: HexCoord) => void;
   onBuildStructure?: (structureType: StructureType, hex: HexCoord) => void;
   onEndTurn?: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
   onSurrender?: () => void;
   isConnected?: boolean;
 }
@@ -34,6 +36,8 @@ export default function GameBoard({
   onBuyUnit,
   onBuildStructure,
   onEndTurn,
+  onUndo,
+  onRedo,
   onSurrender,
   isConnected,
 }: GameBoardProps) {
@@ -254,6 +258,26 @@ export default function GameBoard({
                   title="Surrender"
                 >
                   <span className="text-sm">🏳️</span>
+                </button>
+
+                {/* Undo Last Action */}
+                <button
+                  disabled={!isMyTurn}
+                  onClick={onUndo}
+                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  title="Undo Last Action"
+                >
+                  <span className="text-sm">↩️</span>
+                </button>
+
+                {/* Redo Action */}
+                <button
+                  disabled={!isMyTurn}
+                  onClick={onRedo}
+                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  title="Redo Action"
+                >
+                  <span className="text-sm">↪️</span>
                 </button>
 
                 {/* End turn */}

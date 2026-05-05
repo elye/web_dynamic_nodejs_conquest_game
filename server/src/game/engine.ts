@@ -83,6 +83,8 @@ const TREE_SPREAD_CHANCE = 0.1;
 // ── Game store for GameState instances ──
 
 const gameStates = new Map<string, GameState>();
+const turnSnapshotStacks = new Map<string, GameState[]>();
+const redoStacks = new Map<string, GameState[]>();
 
 // ── Engine ──
 
@@ -166,6 +168,10 @@ export function startGame(gameId: string): GameState {
   gameStates.set(gameId, gameState);
   gameStore.updateGame(gameId, { status: GameStatus.IN_PROGRESS });
 
+  // Clear snapshot stack for the new game
+  turnSnapshotStacks.set(gameId, []);
+  redoStacks.set(gameId, []);
+
   return gameState;
 }
 
@@ -179,6 +185,14 @@ export function moveUnit(
   if (gameState.currentTurnPlayerId !== playerId) {
     throw new Error('Not your turn');
   }
+
+  // Snapshot before mutation for step-by-step undo
+  const stack = turnSnapshotStacks.get(gameState.id) ?? [];
+  stack.push(structuredClone(gameState));
+  turnSnapshotStacks.set(gameState.id, stack);
+
+  // Clear redo stack (new action invalidates redo history)
+  redoStacks.set(gameState.id, []);
 
   // Find unit
   const sourceHex = gameState.hexes.find(
@@ -300,6 +314,7 @@ export function moveUnit(
   unit.hex = toHex;
   unit.hasMoved = true;
   targetHex.unit = unit;
+  delete targetHex.deathMarker;
 
   // If target was neutral, claim it
   if (targetHex.owner === null) {
@@ -324,6 +339,14 @@ export function buyUnit(
   if (gameState.currentTurnPlayerId !== playerId) {
     throw new Error('Not your turn');
   }
+
+  // Snapshot before mutation for step-by-step undo
+  const stack = turnSnapshotStacks.get(gameState.id) ?? [];
+  stack.push(structuredClone(gameState));
+  turnSnapshotStacks.set(gameState.id, stack);
+
+  // Clear redo stack (new action invalidates redo history)
+  redoStacks.set(gameState.id, []);
 
   const targetHex = getHex(gameState.hexes, hex);
   if (!targetHex) throw new Error('Hex does not exist');
@@ -414,6 +437,14 @@ export function buildStructure(
   if (gameState.currentTurnPlayerId !== playerId) {
     throw new Error('Not your turn');
   }
+
+  // Snapshot before mutation for step-by-step undo
+  const stack = turnSnapshotStacks.get(gameState.id) ?? [];
+  stack.push(structuredClone(gameState));
+  turnSnapshotStacks.set(gameState.id, stack);
+
+  // Clear redo stack (new action invalidates redo history)
+  redoStacks.set(gameState.id, []);
 
   const targetHex = getHex(gameState.hexes, hex);
   if (!targetHex) throw new Error('Hex does not exist');
@@ -552,7 +583,57 @@ export function endTurn(gameState: GameState): GameState {
   // Check win condition
   checkWinCondition(gameState);
 
+  // Clear snapshot stack and redo stack for the new turn
+  turnSnapshotStacks.set(gameState.id, []);
+  redoStacks.set(gameState.id, []);
+
   return gameState;
+}
+
+export function undoAction(gameId: string, playerId: string): GameState {
+  const gameState = gameStates.get(gameId);
+  if (!gameState) throw new Error('Game not found');
+  if (gameState.currentTurnPlayerId !== playerId) {
+    throw new Error('Not your turn');
+  }
+
+  const stack = turnSnapshotStacks.get(gameId);
+  if (!stack || stack.length === 0) throw new Error('Nothing to undo');
+
+  // Push current state onto redo stack before restoring
+  const redoStack = redoStacks.get(gameId) ?? [];
+  redoStack.push(structuredClone(gameState));
+  redoStacks.set(gameId, redoStack);
+
+  // Pop the last snapshot and restore it
+  const snapshot = stack.pop()!;
+  const restored = structuredClone(snapshot);
+  gameStates.set(gameId, restored);
+
+  return restored;
+}
+
+export function redoAction(gameId: string, playerId: string): GameState {
+  const gameState = gameStates.get(gameId);
+  if (!gameState) throw new Error('Game not found');
+  if (gameState.currentTurnPlayerId !== playerId) {
+    throw new Error('Not your turn');
+  }
+
+  const redoStack = redoStacks.get(gameId);
+  if (!redoStack || redoStack.length === 0) throw new Error('Nothing to redo');
+
+  // Push current state onto undo stack
+  const undoStack = turnSnapshotStacks.get(gameId) ?? [];
+  undoStack.push(structuredClone(gameState));
+  turnSnapshotStacks.set(gameId, undoStack);
+
+  // Pop from redo stack and restore
+  const snapshot = redoStack.pop()!;
+  const restored = structuredClone(snapshot);
+  gameStates.set(gameId, restored);
+
+  return restored;
 }
 
 export function surrender(

@@ -27,8 +27,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(err.message ?? res.statusText);
+    if (res.status === 401) {
+      // Clear stale auth and force re-login
+      authToken = null;
+      localStorage.removeItem('conquest_auth');
+      window.location.reload();
+      throw new Error('Session expired');
+    }
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error ?? err.message ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

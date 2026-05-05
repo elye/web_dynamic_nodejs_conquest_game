@@ -125,6 +125,11 @@ export default function GamePage() {
   // Handlers
   const handleHexClick = useCallback(
     (q: number, r: number) => {
+      // If clicking the already-selected hex, deselect
+      if (selectedHex && selectedHex.q === q && selectedHex.r === r) {
+        clearSelection();
+        return;
+      }
       // If a unit is selected and this is a valid move target, move
       if (selectedUnit && validMoves.some((m) => m.q === q && m.r === r)) {
         sendMessage({
@@ -138,7 +143,7 @@ export default function GamePage() {
       }
       selectHex(q, r, playerId);
     },
-    [selectedUnit, validMoves, sendMessage, clearSelection, selectHex, playerId],
+    [selectedHex, selectedUnit, validMoves, sendMessage, clearSelection, selectHex, playerId],
   );
 
   const handleMoveUnit = useCallback(
@@ -176,6 +181,14 @@ export default function GamePage() {
     sendMessage({ type: ClientMessageType.END_TURN });
   }, [sendMessage]);
 
+  const handleUndo = useCallback(() => {
+    sendMessage({ type: ClientMessageType.UNDO_TURN });
+  }, [sendMessage]);
+
+  const handleRedo = useCallback(() => {
+    sendMessage({ type: ClientMessageType.REDO_ACTION });
+  }, [sendMessage]);
+
   const handleSurrender = useCallback(() => {
     sendMessage({ type: ClientMessageType.SURRENDER });
   }, [sendMessage]);
@@ -206,6 +219,8 @@ export default function GamePage() {
         onBuyUnit={handleBuyUnit}
         onBuildStructure={handleBuildStructure}
         onEndTurn={handleEndTurn}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
         onSurrender={handleSurrender}
         isConnected={isConnected}
       />

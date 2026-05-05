@@ -21,6 +21,8 @@ import {
   buildStructure,
   endTurn,
   surrender,
+  undoAction,
+  redoAction,
 } from '../game/engine.js';
 import { scheduleAITurnIfNeeded } from '../ai/aiEngine.js';
 
@@ -246,6 +248,12 @@ function handleMessage(playerId: string, gameId: string, message: ClientMessage)
       case ClientMessageType.END_TURN:
         handleEndTurn(playerId, gameId);
         break;
+      case ClientMessageType.UNDO_TURN:
+        handleUndoTurn(playerId, gameId);
+        break;
+      case ClientMessageType.REDO_ACTION:
+        handleRedoAction(playerId, gameId);
+        break;
       case ClientMessageType.CHAT_MESSAGE:
         handleChatMessage(playerId, gameId, message.content);
         break;
@@ -411,6 +419,32 @@ function handleEndTurn(playerId: string, gameId: string): void {
     startTurnTimer(gameState, gameId);
     scheduleAITurnIfNeeded(gameState);
   }
+}
+
+function handleUndoTurn(playerId: string, gameId: string): void {
+  const gameState = getGameState(gameId);
+  if (!gameState) throw new Error('Game not found');
+  requireInProgress(gameState);
+
+  const restored = undoAction(gameId, playerId);
+
+  broadcastToGame(gameId, {
+    type: ServerMessageType.GAME_STATE_FULL,
+    state: restored,
+  });
+}
+
+function handleRedoAction(playerId: string, gameId: string): void {
+  const gameState = getGameState(gameId);
+  if (!gameState) throw new Error('Game not found');
+  requireInProgress(gameState);
+
+  const restored = redoAction(gameId, playerId);
+
+  broadcastToGame(gameId, {
+    type: ServerMessageType.GAME_STATE_FULL,
+    state: restored,
+  });
 }
 
 function handleChatMessage(playerId: string, gameId: string, content: string): void {
