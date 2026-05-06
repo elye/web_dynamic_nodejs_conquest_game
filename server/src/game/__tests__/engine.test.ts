@@ -11,6 +11,7 @@ import {
   redoAction,
 } from '../engine.js';
 import { gameStore } from '../../store/gameStore.js';
+import { recalculateAllProvinces } from '../provinces.js';
 import type { GameState, Hex, Unit, Province, GameRoom } from '@conquest/shared';
 import {
   TerrainType,
@@ -987,5 +988,172 @@ describe('auto-skip, elimination, and win condition', () => {
 
     expect(gs.status).toBe(GameStatus.FINISHED);
     expect(gs.winnerId).toBe('p1');
+  });
+});
+
+// ── real-time income/upkeep updates ──
+
+describe('real-time income/upkeep updates', () => {
+  let gs: GameState;
+  const gameId = 'realtime-test';
+
+  beforeEach(() => {
+    gameStore.deleteGame(gameId);
+    createTestRoom(gameId, ['p1', 'p2']);
+    gs = startGame(gameId);
+  });
+
+  function getP1Province(): Province {
+    return gs.provinces.find((p) => p.owner === 'p1')!;
+  }
+
+  function getP1TotalUpkeep(): number {
+    return gs.provinces
+      .filter((p) => p.owner === 'p1')
+      .reduce((sum, p) => sum + p.upkeep, 0);
+  }
+
+  function getP1TotalIncome(): number {
+    return gs.provinces
+      .filter((p) => p.owner === 'p1')
+      .reduce((sum, p) => sum + p.income, 0);
+  }
+
+  it('buyUnit updates upkeep immediately', () => {
+    const prov = getP1Province();
+    prov.gold = 200;
+
+    const upkeepBefore = getP1TotalUpkeep();
+
+    // Find an empty p1 hex to buy on
+    const emptyHex = gs.hexes.find(
+      (h) => h.owner === 'p1' && !h.unit && !h.structure,
+    );
+    if (!emptyHex) throw new Error('No empty p1 hex');
+
+    buyUnit(gs, 'p1', UnitType.PEASANT, emptyHex.coord);
+
+    const upkeepAfter = getP1TotalUpkeep();
+    expect(upkeepAfter).toBe(upkeepBefore + UNIT_UPKEEP[UnitType.PEASANT]);
+  });
+
+  it('removing tree via move updates income immediately', () => {
+    // Find a p1 hex with a unit and an adjacent p1 hex we can put a tree on
+    const unitHex = gs.hexes.find((h) => h.unit?.owner === 'p1');
+    if (!unitHex) throw new Error('No p1 unit');
+
+    // Find an adjacent hex owned by p1 without a unit
+    const neighbors = [
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q, r: unitHex.coord.r + 1 },
+      { q: unitHex.coord.q, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r + 1 },
+    ];
+    const treeHex = gs.hexes.find(
+      (h) =>
+        h.owner === 'p1' &&
+        !h.unit &&
+        !h.structure &&
+        neighbors.some((n) => n.q === h.coord.q && n.r === h.coord.r),
+    );
+    if (!treeHex) throw new Error('No adjacent empty p1 hex');
+
+    // Place a tree on it
+    treeHex.hasTree = true;
+
+    // Recalculate so income reflects the tree
+    recalculateAllProvinces(gs);
+
+    const incomeBefore = getP1TotalIncome();
+
+    // Move unit onto tree hex
+    moveUnit(gs, 'p1', unitHex.unit!.id, treeHex.coord);
+
+    const incomeAfter = getP1TotalIncome();
+    // Tree removed → that hex now contributes 1 income
+    expect(incomeAfter).toBe(incomeBefore + 1);
+  });
+
+  it('capturing new tile updates income immediately', () => {
+    const unitHex = gs.hexes.find((h) => h.unit?.owner === 'p1');
+    if (!unitHex) throw new Error('No p1 unit');
+
+    const incomeBefore = getP1TotalIncome();
+
+    // Find an adjacent neutral hex
+    const neighbors = [
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q, r: unitHex.coord.r + 1 },
+      { q: unitHex.coord.q, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r + 1 },
+    ];
+    const neutralHex = gs.hexes.find(
+      (h) =>
+        h.owner === null &&
+        !h.hasTree &&
+        h.terrain !== TerrainType.WATER &&
+        neighbors.some((n) => n.q === h.coord.q && n.r === h.coord.r),
+    );
+    if (!neutralHex) throw new Error('No adjacent neutral hex');
+
+    moveUnit(gs, 'p1', unitHex.unit!.id, neutralHex.coord);
+
+    const incomeAfter = getP1TotalIncome();
+    // Captured a non-tree hex → income should increase by 1
+    expect(incomeAfter).toBe(incomeBefore + 1);
+  });
+
+  it('undo reverts upkeep immediately after buyUnit', () => {
+    const prov = getP1Province();
+    prov.gold = 200;
+
+    const upkeepBefore = getP1TotalUpkeep();
+
+    const emptyHex = gs.hexes.find(
+      (h) => h.owner === 'p1' && !h.unit && !h.structure,
+    );
+    if (!emptyHex) throw new Error('No empty p1 hex');
+
+    buyUnit(gs, 'p1', UnitType.PEASANT, emptyHex.coord);
+
+    // Upkeep went up
+    const gsAfterBuy = getGameState(gameId)!;
+    const upkeepAfterBuy = gsAfterBuy.provinces
+      .filter((p) => p.owner === 'p1')
+      .reduce((sum, p) => sum + p.upkeep, 0);
+    expect(upkeepAfterBuy).toBe(upkeepBefore + UNIT_UPKEEP[UnitType.PEASANT]);
+
+    // Undo
+    const restored = undoAction(gameId, 'p1');
+    const upkeepAfterUndo = restored.provinces
+      .filter((p) => p.owner === 'p1')
+      .reduce((sum, p) => sum + p.upkeep, 0);
+    expect(upkeepAfterUndo).toBe(upkeepBefore);
+  });
+
+  it('redo restores upkeep immediately after undo', () => {
+    const prov = getP1Province();
+    prov.gold = 200;
+
+    const upkeepBefore = getP1TotalUpkeep();
+
+    const emptyHex = gs.hexes.find(
+      (h) => h.owner === 'p1' && !h.unit && !h.structure,
+    );
+    if (!emptyHex) throw new Error('No empty p1 hex');
+
+    buyUnit(gs, 'p1', UnitType.PEASANT, emptyHex.coord);
+    undoAction(gameId, 'p1');
+
+    // Redo
+    const redone = redoAction(gameId, 'p1');
+    const upkeepAfterRedo = redone.provinces
+      .filter((p) => p.owner === 'p1')
+      .reduce((sum, p) => sum + p.upkeep, 0);
+    expect(upkeepAfterRedo).toBe(upkeepBefore + UNIT_UPKEEP[UnitType.PEASANT]);
   });
 });

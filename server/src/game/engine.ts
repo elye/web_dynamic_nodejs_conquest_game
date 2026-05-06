@@ -345,12 +345,14 @@ export function moveUnit(
   // If target was neutral, claim it
   if (targetHex.owner === null) {
     targetHex.owner = playerId;
-    recalculateAllProvinces(gameState);
-    for (const player of gameState.players) {
-      player.provinces = gameState.provinces
-        .filter((p) => p.owner === player.id)
-        .map((p) => p.id);
-    }
+  }
+
+  // Always recalculate provinces after all mutations (capture, tree removal, unit move)
+  recalculateAllProvinces(gameState);
+  for (const player of gameState.players) {
+    player.provinces = gameState.provinces
+      .filter((p) => p.owner === player.id)
+      .map((p) => p.id);
   }
 
   return gameState;
