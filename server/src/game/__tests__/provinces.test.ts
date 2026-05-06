@@ -6,7 +6,7 @@ import {
   recalculateAllProvinces,
 } from '../provinces.js';
 import type { Hex, GameState, Province } from '@conquest/shared';
-import { TerrainType, UnitType, GameStatus, UNIT_UPKEEP, UNIT_STRENGTH } from '@conquest/shared';
+import { TerrainType, UnitType, StructureType, GameStatus, UNIT_UPKEEP, UNIT_STRENGTH, STRUCTURE_STRENGTH } from '@conquest/shared';
 
 // ── Helpers ──
 
@@ -170,9 +170,17 @@ describe('calculateProvinceUpkeep', () => {
 // ── recalculateAllProvinces ──
 
 describe('recalculateAllProvinces', () => {
-  it('handles province splits with proportional gold', () => {
+  it('handles province splits with capital-based gold', () => {
     const hexes: Hex[] = [
-      makeHex(0, 0, 'p1'),
+      makeHex(0, 0, 'p1', {
+        structure: {
+          id: 'cap-1',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 0, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
       makeHex(1, 0, 'p1'),
       // gap
       makeHex(3, 0, 'p1'),
@@ -195,14 +203,28 @@ describe('recalculateAllProvinces', () => {
     recalculateAllProvinces(gameState);
 
     expect(gameState.provinces).toHaveLength(2);
-    // Total gold should be preserved
-    const totalGold = gameState.provinces.reduce((s, p) => s + p.gold, 0);
-    expect(totalGold).toBe(30);
+    // Capital fragment keeps all gold, other fragment gets 0
+    const capitalProv = gameState.provinces.find((p) =>
+      p.hexes.some((h) => h.q === 0 && h.r === 0),
+    )!;
+    expect(capitalProv.gold).toBe(30);
+    const otherProv = gameState.provinces.find((p) =>
+      p.hexes.some((h) => h.q === 3 && h.r === 0),
+    )!;
+    expect(otherProv.gold).toBe(0);
   });
 
-  it('preserves total gold across splits', () => {
+  it('preserves gold for province with capital', () => {
     const hexes: Hex[] = [
-      makeHex(0, 0, 'p1'),
+      makeHex(0, 0, 'p1', {
+        structure: {
+          id: 'cap-1',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 0, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
       makeHex(1, 0, 'p1'),
       makeHex(0, 1, 'p1'),
       // disconnected
@@ -226,14 +248,27 @@ describe('recalculateAllProvinces', () => {
 
     recalculateAllProvinces(gameState);
 
-    const totalGold = gameState.provinces.reduce((s, p) => s + p.gold, 0);
-    expect(totalGold).toBe(100);
+    // Capital province keeps 100, split fragment gets 0
+    const capitalProv = gameState.provinces.find((p) =>
+      p.hexes.some((h) => h.q === 0 && h.r === 0),
+    )!;
+    expect(capitalProv.gold).toBe(100);
   });
 
   it('recalculates income and upkeep', () => {
     const hexes: Hex[] = [
-      makeHex(0, 0, 'p1', { unit: makeUnit('p1', 0, 0, UnitType.PEASANT) }),
-      makeHex(1, 0, 'p1'),
+      makeHex(0, 0, 'p1', {
+        unit: makeUnit('p1', 0, 0, UnitType.PEASANT),
+      }),
+      makeHex(1, 0, 'p1', {
+        structure: {
+          id: 'cap-1',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 1, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
       makeHex(0, 1, 'p1', { hasTree: true, terrain: TerrainType.FOREST }),
     ];
     const gameState = {

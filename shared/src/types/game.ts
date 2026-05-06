@@ -46,6 +46,7 @@ export interface Unit {
 export enum StructureType {
   TOWER = 'TOWER',
   STRONG_TOWER = 'STRONG_TOWER',
+  CAPITAL = 'CAPITAL',
 }
 
 export interface Structure {

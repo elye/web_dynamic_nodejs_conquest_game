@@ -1,4 +1,5 @@
 import type { Hex, HexCoord, Province, GameState } from '@conquest/shared';
+import { StructureType } from '@conquest/shared';
 import { randomUUID } from 'node:crypto';
 import { coordKey, getHexNeighbors } from './mapGenerator.js';
 
@@ -101,6 +102,7 @@ export function calculateProvinces(
 export function recalculateAllProvinces(gameState: GameState): void {
   const oldProvinces = gameState.provinces;
   const newProvinces: Province[] = [];
+  const lookup = buildHexLookup(gameState.hexes);
 
   const playerIds = new Set<string>();
   for (const hex of gameState.hexes) {
@@ -110,32 +112,94 @@ export function recalculateAllProvinces(gameState: GameState): void {
   for (const playerId of playerIds) {
     const playerProvinces = calculateProvinces(gameState.hexes, playerId);
 
-    // Preserve treasury: distribute old gold proportionally by hex count
+    // Build a set of old province hex→gold mappings to identify which new
+    // province inherited the capital (and therefore the gold).
     const oldPlayerProvinces = oldProvinces.filter(
       (p) => p.owner === playerId,
     );
-    const oldTotalGold = oldPlayerProvinces.reduce(
-      (sum, p) => sum + p.gold,
-      0,
-    );
-    const totalNewHexes = playerProvinces.reduce(
-      (sum, p) => sum + p.hexes.length,
-      0,
-    );
 
-    if (totalNewHexes > 0 && oldTotalGold > 0) {
-      let distributed = 0;
-      for (const province of playerProvinces) {
-        province.gold = Math.floor(
-          (oldTotalGold * province.hexes.length) / totalNewHexes,
-        );
-        distributed += province.gold;
+    // For each new province, check if it contains a hex with a capital
+    for (const province of playerProvinces) {
+      let hasCapital = false;
+      for (const coord of province.hexes) {
+        const hex = lookup.get(coordKey(coord.q, coord.r));
+        if (hex?.structure?.type === StructureType.CAPITAL && hex.structure.owner === playerId) {
+          hasCapital = true;
+          break;
+        }
       }
-      // Give any rounding remainder to the largest province
-      const remainder = oldTotalGold - distributed;
-      if (remainder > 0) {
-        playerProvinces.sort((a, b) => b.hexes.length - a.hexes.length);
-        playerProvinces[0].gold += remainder;
+
+      if (hasCapital) {
+        // This province has the original capital — find which old province
+        // contained this capital hex and inherit ALL its gold
+        let inheritedGold = 0;
+        for (const oldProv of oldPlayerProvinces) {
+          // Check if any of this new province's hexes with a capital were in
+          // this old province
+          for (const coord of province.hexes) {
+            const hex = lookup.get(coordKey(coord.q, coord.r));
+            if (hex?.structure?.type === StructureType.CAPITAL && hex.structure.owner === playerId) {
+              const wasInOld = oldProv.hexes.some(
+                (h) => h.q === coord.q && h.r === coord.r,
+              );
+              if (wasInOld) {
+                inheritedGold += oldProv.gold;
+              }
+            }
+          }
+        }
+        province.gold = inheritedGold;
+      } else {
+        // No capital — this is a split fragment. Gets 0 gold and a new capital.
+        province.gold = 0;
+        // Auto-place a capital if 2+ hexes
+        if (province.hexes.length >= 2) {
+          // Find an empty hex (no unit, no structure)
+          let placed = false;
+          for (const coord of province.hexes) {
+            const hex = lookup.get(coordKey(coord.q, coord.r));
+            if (hex && !hex.unit && !hex.structure) {
+              hex.structure = {
+                id: randomUUID(),
+                type: StructureType.CAPITAL,
+                owner: playerId,
+                hex: coord,
+                strength: 2,
+              };
+              placed = true;
+              break;
+            }
+          }
+          // If no completely empty hex, place on a hex with a unit but no structure
+          if (!placed) {
+            for (const coord of province.hexes) {
+              const hex = lookup.get(coordKey(coord.q, coord.r));
+              if (hex && !hex.structure) {
+                hex.structure = {
+                  id: randomUUID(),
+                  type: StructureType.CAPITAL,
+                  owner: playerId,
+                  hex: coord,
+                  strength: 2,
+                };
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Remove provinces with fewer than 2 hexes from having a capital
+    // (single-hex provinces don't get capitals)
+    for (const province of playerProvinces) {
+      if (province.hexes.length < 2) {
+        for (const coord of province.hexes) {
+          const hex = lookup.get(coordKey(coord.q, coord.r));
+          if (hex?.structure?.type === StructureType.CAPITAL) {
+            hex.structure = null;
+          }
+        }
       }
     }
 

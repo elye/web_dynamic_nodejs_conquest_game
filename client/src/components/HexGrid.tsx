@@ -174,7 +174,11 @@ export default function HexGrid({
 
       // Structure
       if (hex.structure) {
-        const emoji = hex.structure.type === StructureType.STRONG_TOWER ? '🏯' : '🏰';
+        const emoji = hex.structure.type === StructureType.STRONG_TOWER
+          ? '🏯'
+          : hex.structure.type === StructureType.CAPITAL
+            ? '🏛️'
+            : '🏰';
         ctx.fillStyle = '#000';
         ctx.font = `${Math.round(size * 0.6)}px serif`;
         ctx.textAlign = 'center';

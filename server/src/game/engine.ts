@@ -87,9 +87,17 @@ function canPlayerAct(gameState: GameState, playerId: string): boolean {
   if (hasUnits) return true;
 
   const cheapestCost = UNIT_COST[UnitType.PEASANT];
+  const hexLookup = buildHexLookup(gameState.hexes);
   return gameState.provinces
     .filter((p) => p.owner === playerId)
-    .some((p) => p.gold >= cheapestCost);
+    .some((p) => {
+      if (p.gold < cheapestCost) return false;
+      // Province needs a capital to buy units
+      return p.hexes.some((c) => {
+        const h = hexLookup.get(coordKey(c.q, c.r));
+        return h?.structure?.type === StructureType.CAPITAL && h.structure.owner === playerId;
+      });
+    });
 }
 
 function checkEliminations(gameState: GameState): void {
@@ -183,6 +191,34 @@ export function startGame(gameId: string): GameState {
     const playerProvinces = calculateProvinces(hexes, player.id);
     for (const province of playerProvinces) {
       province.gold = room.settings.startingGold ?? DEFAULT_GAME_SETTINGS.startingGold;
+
+      // Place a capital on the hex that has the starting peasant
+      if (province.hexes.length >= 2) {
+        const unitHex = hexes.find(
+          (h) =>
+            h.unit?.owner === player.id &&
+            province.hexes.some((ph) => ph.q === h.coord.q && ph.r === h.coord.r),
+        );
+        if (unitHex) {
+          // Place capital on an empty hex in the province (not the unit hex)
+          const emptyHex = hexes.find(
+            (h) =>
+              !h.unit &&
+              !h.structure &&
+              h.owner === player.id &&
+              province.hexes.some((ph) => ph.q === h.coord.q && ph.r === h.coord.r),
+          );
+          if (emptyHex) {
+            emptyHex.structure = {
+              id: randomUUID(),
+              type: StructureType.CAPITAL,
+              owner: player.id,
+              hex: emptyHex.coord,
+              strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+            };
+          }
+        }
+      }
     }
     gameState.provinces.push(...playerProvinces);
     player.provinces = playerProvinces.map((p) => p.id);
@@ -263,6 +299,9 @@ export function moveUnit(
 
   // Handle friendly unit merge (move onto own unit)
   if (targetHex.owner === playerId && targetHex.unit && targetHex.unit.owner === playerId) {
+    if (targetHex.structure) {
+      throw new Error('Cannot move onto a hex with a structure');
+    }
     const mergeKey = `${targetHex.unit.type}+${unit.type}`;
     const mergedType = UNIT_MERGE_MAP[mergeKey];
     if (!mergedType) {
@@ -335,6 +374,11 @@ export function moveUnit(
     }
   }
 
+  // Block moving onto own structure (capital, tower)
+  if (targetHex.owner === playerId && targetHex.structure) {
+    throw new Error('Cannot move onto a hex with a structure');
+  }
+
   // Move unit
   sourceHex.unit = null;
   unit.hex = toHex;
@@ -380,6 +424,18 @@ export function buyUnit(
   if (!targetHex) throw new Error('Hex does not exist');
   if (targetHex.owner !== playerId) {
     throw new Error('Hex is not owned by you');
+  }
+
+  // Province must have a capital to buy units
+  const buyProvince = findProvinceForHex(gameState.provinces, hex, playerId);
+  if (!buyProvince) throw new Error('Hex does not belong to any province');
+  const hexLookup = buildHexLookup(gameState.hexes);
+  const provinceHasCapital = buyProvince.hexes.some((c) => {
+    const h = hexLookup.get(coordKey(c.q, c.r));
+    return h?.structure?.type === StructureType.CAPITAL && h.structure.owner === playerId;
+  });
+  if (!provinceHasCapital) {
+    throw new Error('Province has no capital — cannot buy units');
   }
 
   // Handle merging: if hex has a unit, try to merge
@@ -464,6 +520,11 @@ export function buildStructure(
 ): GameState {
   if (gameState.currentTurnPlayerId !== playerId) {
     throw new Error('Not your turn');
+  }
+
+  // Cannot manually build capitals
+  if (structureType === StructureType.CAPITAL) {
+    throw new Error('Capitals are placed automatically');
   }
 
   // Snapshot before mutation for step-by-step undo

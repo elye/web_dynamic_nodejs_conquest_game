@@ -195,16 +195,40 @@ describe('WebSocket handler – mid-turn vs end-turn message routing', () => {
   it('MOVE_UNIT sends state update only to the current player', async () => {
     const gameState = getGameState(gameId)!;
     // Find a unit owned by p1 (the current turn player)
-    const p1Unit = gameState.hexes.find((h) => h.unit?.owner === 'p1')?.unit;
-    expect(p1Unit).toBeDefined();
+    const unitHex = gameState.hexes.find((h) => h.unit?.owner === 'p1');
+    expect(unitHex).toBeDefined();
+    const p1Unit = unitHex!.unit!;
 
-    // Find an adjacent empty hex owned by p1 to move to
-    const unitHex = gameState.hexes.find(
-      (h) => h.coord.q === p1Unit!.hex.q && h.coord.r === p1Unit!.hex.r,
-    )!;
-    const targetHex = gameState.hexes.find(
-      (h) => h.owner === 'p1' && !h.unit && h.terrain !== TerrainType.WATER,
+    // Find an adjacent hex that p1 can move to
+    const adjCoords = [
+      { q: unitHex!.coord.q + 1, r: unitHex!.coord.r },
+      { q: unitHex!.coord.q - 1, r: unitHex!.coord.r },
+      { q: unitHex!.coord.q, r: unitHex!.coord.r + 1 },
+      { q: unitHex!.coord.q, r: unitHex!.coord.r - 1 },
+      { q: unitHex!.coord.q + 1, r: unitHex!.coord.r - 1 },
+      { q: unitHex!.coord.q - 1, r: unitHex!.coord.r + 1 },
+    ];
+    let targetHex = gameState.hexes.find(
+      (h) =>
+        h.owner === 'p1' &&
+        !h.unit &&
+        !h.structure &&
+        h.terrain !== TerrainType.WATER &&
+        adjCoords.some((a) => a.q === h.coord.q && a.r === h.coord.r),
     );
+    if (!targetHex) {
+      // Create an adjacent neutral hex if none exists
+      const coord = adjCoords[0];
+      targetHex = {
+        coord,
+        terrain: TerrainType.GRASS,
+        owner: null,
+        unit: null,
+        structure: null,
+        hasTree: false,
+      };
+      gameState.hexes.push(targetHex);
+    }
     expect(targetHex).toBeDefined();
 
     sendMessage(client1.ws, {
@@ -239,9 +263,9 @@ describe('WebSocket handler – mid-turn vs end-turn message routing', () => {
     expect(p1Province).toBeDefined();
     p1Province!.gold = 100;
 
-    // Find an owned hex without a unit
+    // Find an owned hex without a unit or structure
     const emptyHex = gameState.hexes.find(
-      (h) => h.owner === 'p1' && !h.unit && h.terrain !== TerrainType.WATER,
+      (h) => h.owner === 'p1' && !h.unit && !h.structure && h.terrain !== TerrainType.WATER,
     );
     expect(emptyHex).toBeDefined();
 
@@ -303,7 +327,7 @@ describe('WebSocket handler – mid-turn vs end-turn message routing', () => {
     const gameState = getGameState(gameId)!;
     const p1Unit = gameState.hexes.find((h) => h.unit?.owner === 'p1')?.unit;
     const targetHex = gameState.hexes.find(
-      (h) => h.owner === 'p1' && !h.unit && h.terrain !== TerrainType.WATER,
+      (h) => h.owner === 'p1' && !h.unit && !h.structure && h.terrain !== TerrainType.WATER,
     );
 
     if (p1Unit && targetHex) {
@@ -343,7 +367,7 @@ describe('WebSocket handler – mid-turn vs end-turn message routing', () => {
     const gameState = getGameState(gameId)!;
     const p1Unit = gameState.hexes.find((h) => h.unit?.owner === 'p1')?.unit;
     const targetHex = gameState.hexes.find(
-      (h) => h.owner === 'p1' && !h.unit && h.terrain !== TerrainType.WATER,
+      (h) => h.owner === 'p1' && !h.unit && !h.structure && h.terrain !== TerrainType.WATER,
     );
 
     if (p1Unit && targetHex) {

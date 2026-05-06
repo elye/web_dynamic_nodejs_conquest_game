@@ -76,9 +76,6 @@ export default function GameBoard({
             const totalGold = gameState.provinces
               .filter((p) => p.owner === player.id)
               .reduce((sum, p) => sum + p.gold, 0);
-            const netIncome = gameState.provinces
-              .filter((p) => p.owner === player.id)
-              .reduce((sum, p) => sum + (p.income - p.upkeep), 0);
             const isCurrentTurn = player.id === gameState.currentTurnPlayerId;
             return (
               <div
@@ -114,9 +111,6 @@ export default function GameBoard({
                 <div className="mt-1 text-xs text-slate-700 space-y-0.5">
                   <div>Territory: {territoryCount}</div>
                   <div>Gold: {totalGold}</div>
-                  <div className={netIncome >= 0 ? 'text-green-800' : 'text-red-800'}>
-                    Net: {netIncome >= 0 ? '+' : ''}{netIncome}/turn
-                  </div>
                   <div className="flex items-center gap-1">
                     <span
                       className={`w-2 h-2 rounded-full ${player.isConnected ? 'bg-green-600' : 'bg-red-600'}`}
@@ -148,6 +142,9 @@ export default function GameBoard({
                 }
               >
                 Net: {selectedProvince.income - selectedProvince.upkeep}/turn
+              </div>
+              <div>
+                Capital: {hasCapitalInProvince(selectedProvince, gameState) ? '🏛️ Yes' : '❌ No'}
               </div>
             </div>
           </div>
@@ -337,4 +334,13 @@ function findProvinceForHex(
         p.hexes.some((h) => h.q === hex.q && h.r === hex.r),
     ) ?? null
   );
+}
+
+function hasCapitalInProvince(province: Province, gameState: GameState): boolean {
+  return province.hexes.some((coord) => {
+    const hex = gameState.hexes.find(
+      (h) => h.coord.q === coord.q && h.coord.r === coord.r,
+    );
+    return hex?.structure?.type === StructureTypeEnum.CAPITAL;
+  });
 }

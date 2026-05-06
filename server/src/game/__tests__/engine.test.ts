@@ -12,6 +12,7 @@ import {
 } from '../engine.js';
 import { gameStore } from '../../store/gameStore.js';
 import { recalculateAllProvinces } from '../provinces.js';
+import { getHexDefense } from '../combat.js';
 import type { GameState, Hex, Unit, Province, GameRoom } from '@conquest/shared';
 import {
   TerrainType,
@@ -99,28 +100,46 @@ function createTestGameState(gameId: string = 'test-game'): GameState {
 
   const hexes: Hex[] = [
     makeHex(0, 0, 'p1', { unit: p1Unit }),
-    makeHex(1, 0, 'p1'),
+    makeHex(1, 0, 'p1', {
+      structure: {
+        id: 'cap-p1',
+        type: StructureType.CAPITAL,
+        owner: 'p1',
+        hex: { q: 1, r: 0 },
+        strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+      },
+    }),
+    makeHex(-1, 0, 'p1'), // empty hex for building structures
     makeHex(2, 0, 'p2', { unit: p2Unit }),
     makeHex(0, 1, null),
     makeHex(1, 1, null),
-    makeHex(2, 1, 'p2'),
+    makeHex(2, 1, 'p2', {
+      structure: {
+        id: 'cap-p2',
+        type: StructureType.CAPITAL,
+        owner: 'p2',
+        hex: { q: 2, r: 1 },
+        strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+      },
+    }),
+    makeHex(3, 0, 'p2'), // extra p2 hex for tests
   ];
 
   const province1: Province = {
     id: 'prov-p1',
-    hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }],
+    hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: -1, r: 0 }],
     owner: 'p1',
     gold: 50,
-    income: 2,
+    income: 3,
     upkeep: UNIT_UPKEEP[UnitType.PEASANT],
   };
 
   const province2: Province = {
     id: 'prov-p2',
-    hexes: [{ q: 2, r: 0 }, { q: 2, r: 1 }],
+    hexes: [{ q: 2, r: 0 }, { q: 2, r: 1 }, { q: 3, r: 0 }],
     owner: 'p2',
     gold: 50,
-    income: 2,
+    income: 3,
     upkeep: UNIT_UPKEEP[UnitType.PEASANT],
   };
 
@@ -286,22 +305,19 @@ describe('moveUnit', () => {
   });
 
   it('captures enemy territory when stronger', () => {
-    // Give p1 a baron (str 3) to attack p2 peasant (str 1)
+    // p2 has capital at (2,1) giving +2 defense to adjacent (2,0)
+    // p2 peasant (str 1) + capital defense (2) = defense 3
+    // Need Knight (str 4) to beat defense 3
     const srcHex = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0)!;
-    srcHex.unit = makeUnit('p1', 0, 0, UnitType.BARON, 'u1-baron');
-
-    // Move p1 unit to (1,0) first (own territory), then we need adjacency to p2
-    // Actually let's set up a direct attack scenario:
-    // Put p1 baron at (1,0) adjacent to p2's (2,0)
     srcHex.unit = null;
     const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
-    const baron = makeUnit('p1', 1, 0, UnitType.BARON, 'u1-baron');
-    midHex.unit = baron;
+    const knight = makeUnit('p1', 1, 0, UnitType.KNIGHT, 'u1-knight');
+    midHex.unit = knight;
 
-    const result = moveUnit(gs, 'p1', 'u1-baron', { q: 2, r: 0 });
+    const result = moveUnit(gs, 'p1', 'u1-knight', { q: 2, r: 0 });
     const capturedHex = result.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0);
     expect(capturedHex!.owner).toBe('p1');
-    expect(capturedHex!.unit!.id).toBe('u1-baron');
+    expect(capturedHex!.unit!.id).toBe('u1-knight');
   });
 
   it("can't capture when too weak", () => {
@@ -322,8 +338,9 @@ describe('moveUnit', () => {
   });
 
   it('merges friendly units (Peasant+Peasant=Spearman)', () => {
-    // Place a second peasant on (1,0)
+    // Place a second peasant on (1,0) and clear its capital so merge is allowed
     const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    midHex.structure = null;
     midHex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'u1-target');
 
     const result = moveUnit(gs, 'p1', 'u1', { q: 1, r: 0 });
@@ -338,6 +355,7 @@ describe('moveUnit', () => {
 
   it('merges friendly units (Spearman+Peasant=Baron)', () => {
     const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    midHex.structure = null;
     midHex.unit = makeUnit('p1', 1, 0, UnitType.SPEARMAN, 'u1-spear');
 
     const result = moveUnit(gs, 'p1', 'u1', { q: 1, r: 0 });
@@ -365,8 +383,8 @@ describe('buyUnit', () => {
   });
 
   it('can buy unit on own empty hex', () => {
-    const result = buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 });
-    const hex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
+    const result = buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
+    const hex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0);
     expect(hex!.unit).not.toBeNull();
     expect(hex!.unit!.type).toBe(UnitType.PEASANT);
     expect(hex!.unit!.owner).toBe('p1');
@@ -375,7 +393,7 @@ describe('buyUnit', () => {
 
   it('deducts gold from province', () => {
     const goldBefore = gs.provinces.find((p) => p.owner === 'p1')!.gold;
-    buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 });
+    buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
     // After recalculateAllProvinces, gold should be preserved minus cost
     const totalGold = gs.provinces
       .filter((p) => p.owner === 'p1')
@@ -385,21 +403,21 @@ describe('buyUnit', () => {
 
   it("can't buy if not enough gold", () => {
     gs.provinces.find((p) => p.owner === 'p1')!.gold = 1;
-    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 })).toThrow(
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 })).toThrow(
       'Insufficient gold',
     );
   });
 
   it("can't buy on hex with structure", () => {
-    const hex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
     hex.structure = {
       id: 'struct-1',
       type: StructureType.TOWER,
       owner: 'p1',
-      hex: { q: 1, r: 0 },
+      hex: { q: -1, r: 0 },
       strength: STRUCTURE_STRENGTH[StructureType.TOWER],
     };
-    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 })).toThrow(
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 })).toThrow(
       'already has a structure',
     );
   });
@@ -417,12 +435,12 @@ describe('buyUnit', () => {
   });
 
   it('removes trees when placing unit', () => {
-    const hex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
     hex.hasTree = true;
     hex.terrain = TerrainType.FOREST;
 
-    const result = buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 });
-    const placedHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
+    const result = buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
+    const placedHex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0);
     expect(placedHex!.hasTree).toBe(false);
   });
 
@@ -447,8 +465,8 @@ describe('buildStructure', () => {
   });
 
   it('can build tower on own empty hex', () => {
-    const result = buildStructure(gs, 'p1', StructureType.TOWER, { q: 1, r: 0 });
-    const hex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
+    const result = buildStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+    const hex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0);
     expect(hex!.structure).not.toBeNull();
     expect(hex!.structure!.type).toBe(StructureType.TOWER);
     expect(hex!.structure!.owner).toBe('p1');
@@ -456,15 +474,15 @@ describe('buildStructure', () => {
 
   it('can build strong tower', () => {
     gs.provinces.find((p) => p.owner === 'p1')!.gold = 100;
-    const result = buildStructure(gs, 'p1', StructureType.STRONG_TOWER, { q: 1, r: 0 });
-    const hex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
+    const result = buildStructure(gs, 'p1', StructureType.STRONG_TOWER, { q: -1, r: 0 });
+    const hex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0);
     expect(hex!.structure!.type).toBe(StructureType.STRONG_TOWER);
     expect(hex!.structure!.strength).toBe(STRUCTURE_STRENGTH[StructureType.STRONG_TOWER]);
   });
 
   it('deducts gold from province', () => {
     const goldBefore = gs.provinces.find((p) => p.owner === 'p1')!.gold;
-    buildStructure(gs, 'p1', StructureType.TOWER, { q: 1, r: 0 });
+    buildStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
     const prov = gs.provinces.find((p) => p.owner === 'p1')!;
     expect(prov.gold).toBe(goldBefore - STRUCTURE_COST[StructureType.TOWER]);
   });
@@ -472,7 +490,7 @@ describe('buildStructure', () => {
   it("can't build if not enough gold", () => {
     gs.provinces.find((p) => p.owner === 'p1')!.gold = 1;
     expect(() =>
-      buildStructure(gs, 'p1', StructureType.TOWER, { q: 1, r: 0 }),
+      buildStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 }),
     ).toThrow('Insufficient gold');
   });
 
@@ -483,10 +501,10 @@ describe('buildStructure', () => {
   });
 
   it("can't build on hex with existing structure", () => {
-    buildStructure(gs, 'p1', StructureType.TOWER, { q: 1, r: 0 });
+    buildStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
     gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
     expect(() =>
-      buildStructure(gs, 'p1', StructureType.TOWER, { q: 1, r: 0 }),
+      buildStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 }),
     ).toThrow('already has a structure');
   });
 
@@ -695,7 +713,7 @@ describe('undoAction / redoAction', () => {
     let targetCoord = null;
     for (const nc of neighbors) {
       const hex = gs.hexes.find((h) => h.coord.q === nc.q && h.coord.r === nc.r);
-      if (hex && hex.terrain !== TerrainType.WATER && (hex.owner === 'p1' || hex.owner === null) && !hex.unit) {
+      if (hex && hex.terrain !== TerrainType.WATER && (hex.owner === 'p1' || hex.owner === null) && !hex.unit && !hex.structure) {
         targetCoord = nc;
         break;
       }
@@ -841,7 +859,7 @@ describe('undoAction / redoAction', () => {
     let targetCoord = null;
     for (const nc of neighbors) {
       const hex = gs.hexes.find((h) => h.coord.q === nc.q && h.coord.r === nc.r);
-      if (hex && hex.terrain !== TerrainType.WATER && (hex.owner === 'p1' || hex.owner === null) && !hex.unit) {
+      if (hex && hex.terrain !== TerrainType.WATER && (hex.owner === 'p1' || hex.owner === null) && !hex.unit && !hex.structure) {
         targetCoord = nc;
         break;
       }
@@ -880,7 +898,7 @@ describe('undoAction / redoAction', () => {
     let targetCoord = null;
     for (const nc of neighbors) {
       const hex = gs.hexes.find((h) => h.coord.q === nc.q && h.coord.r === nc.r);
-      if (hex && hex.terrain !== TerrainType.WATER && (hex.owner === 'p1' || hex.owner === null) && !hex.unit) {
+      if (hex && hex.terrain !== TerrainType.WATER && (hex.owner === 'p1' || hex.owner === null) && !hex.unit && !hex.structure) {
         targetCoord = nc;
         break;
       }
@@ -899,6 +917,219 @@ describe('undoAction / redoAction', () => {
   });
 });
 
+// ── Capital System ──
+
+describe('Capital System', () => {
+  it('startGame places capitals in starting clusters', () => {
+    gameStore.deleteGame('cap-start-test');
+    createTestRoom('cap-start-test', ['p1', 'p2']);
+    const state = startGame('cap-start-test');
+
+    // Each player should have at least one capital
+    for (const player of state.players) {
+      const capitals = state.hexes.filter(
+        (h) =>
+          h.structure?.type === StructureType.CAPITAL &&
+          h.structure.owner === player.id,
+      );
+      expect(capitals.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('province with 2+ hexes gets a capital via recalculation', () => {
+    const gs = createTestGameState('cap-recalc-test');
+    // Remove p1's capital to test auto-placement
+    const capHex = gs.hexes.find(
+      (h) => h.structure?.type === StructureType.CAPITAL && h.structure.owner === 'p1',
+    )!;
+    capHex.structure = null;
+
+    recalculateAllProvinces(gs);
+
+    // After recalculation, p1's province (3 hexes) should get a new capital
+    const p1Capitals = gs.hexes.filter(
+      (h) => h.structure?.type === StructureType.CAPITAL && h.structure?.owner === 'p1',
+    );
+    expect(p1Capitals.length).toBe(1);
+  });
+
+  it('province with 1 hex does NOT get a capital', () => {
+    const gs = createTestGameState('cap-single-test');
+    // Make p1 have only 1 hex by removing ownership of others
+    const hex1 = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    hex1.owner = null;
+    hex1.structure = null; // remove capital
+    const hex2 = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    hex2.owner = null;
+
+    recalculateAllProvinces(gs);
+
+    const p1Capitals = gs.hexes.filter(
+      (h) => h.structure?.type === StructureType.CAPITAL && h.structure?.owner === 'p1',
+    );
+    expect(p1Capitals.length).toBe(0);
+  });
+
+  it('splitting territory: capital fragment keeps all gold, new fragment gets 0', () => {
+    // Create a linear territory: (-1,0) - (0,0) - (1,0) - (2,0) - (3,0)
+    // Capital on (1,0). Remove (0,0) to split into [-1,0] and [1,0, 2,0, 3,0]
+    const hexes: Hex[] = [
+      makeHex(-1, 0, 'p1'),
+      makeHex(0, 0, 'p1'),
+      makeHex(1, 0, 'p1', {
+        structure: {
+          id: 'cap-split',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 1, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
+      makeHex(2, 0, 'p1'),
+      makeHex(3, 0, 'p1'),
+      // Need some hexes for p2 so recalculation works
+      makeHex(0, 1, 'p2'),
+      makeHex(1, 1, 'p2'),
+    ];
+
+    const gs: GameState = {
+      id: 'split-test',
+      status: GameStatus.IN_PROGRESS,
+      settings: { ...DEFAULT_GAME_SETTINGS },
+      players: [
+        { id: 'p1', name: 'P1', color: '#e74c3c', isAI: false, isConnected: true, isEliminated: false, gold: 0, provinces: [], ready: true },
+        { id: 'p2', name: 'P2', color: '#3498db', isAI: false, isConnected: true, isEliminated: false, gold: 0, provinces: [], ready: true },
+      ],
+      hexes,
+      provinces: [
+        {
+          id: 'prov-split',
+          hexes: [{ q: -1, r: 0 }, { q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }, { q: 3, r: 0 }],
+          owner: 'p1',
+          gold: 100,
+          income: 5,
+          upkeep: 0,
+        },
+        {
+          id: 'prov-p2-split',
+          hexes: [{ q: 0, r: 1 }, { q: 1, r: 1 }],
+          owner: 'p2',
+          gold: 20,
+          income: 2,
+          upkeep: 0,
+        },
+      ],
+      currentTurnPlayerId: 'p1',
+      turnNumber: 1,
+      turnStartedAt: Date.now(),
+      history: [],
+      winnerId: null,
+      createdAt: Date.now(),
+    };
+
+    // Split: remove (0,0) from p1's territory
+    const splitHex = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0)!;
+    splitHex.owner = null;
+
+    recalculateAllProvinces(gs);
+
+    // Province with capital (1,0) should keep all 100 gold
+    const capitalProv = gs.provinces.find(
+      (p) =>
+        p.owner === 'p1' &&
+        p.hexes.some((h) => h.q === 1 && h.r === 0),
+    )!;
+    expect(capitalProv.gold).toBe(100);
+
+    // Province without original capital (-1,0 alone) should have 0 gold
+    // But single hex provinces don't get capitals, so it's just 0 gold
+    const fragmentProv = gs.provinces.find(
+      (p) =>
+        p.owner === 'p1' &&
+        p.hexes.some((h) => h.q === -1 && h.r === 0),
+    );
+    if (fragmentProv) {
+      expect(fragmentProv.gold).toBe(0);
+    }
+  });
+
+  it('capturing enemy capital destroys it', () => {
+    const gs = createTestGameState('cap-capture-test');
+    // Put a strong unit adjacent to enemy capital at (2,1)
+    // First, we need the knight at (1,1) adjacent to (2,1)
+    const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 1)!;
+    midHex.owner = 'p1';
+    midHex.unit = makeUnit('p1', 1, 1, UnitType.KNIGHT, 'knight-cap');
+
+    // Update province to include (1,1)
+    gs.provinces.find((p) => p.owner === 'p1')!.hexes.push({ q: 1, r: 1 });
+
+    // Move knight to capture capital at (2,1)
+    const result = moveUnit(gs, 'p1', 'knight-cap', { q: 2, r: 1 });
+
+    // Capital at (2,1) should be destroyed
+    const capturedHex = result.hexes.find((h) => h.coord.q === 2 && h.coord.r === 1);
+    expect(capturedHex!.owner).toBe('p1');
+    // Capital structure should be gone (destroyed on capture)
+    expect(
+      capturedHex!.structure === null ||
+      capturedHex!.structure?.owner === 'p1'
+    ).toBe(true);
+  });
+
+  it('after capital capture, new capital auto-appears if 2+ hexes remain', () => {
+    const gs = createTestGameState('cap-auto-test');
+    // Add more p2 hexes so they still have 2+ after losing capital
+    const extraHex = makeHex(3, 1, 'p2');
+    gs.hexes.push(extraHex);
+    gs.provinces.find((p) => p.owner === 'p2')!.hexes.push({ q: 3, r: 1 });
+
+    // Put a knight at (1,1) to capture p2's capital at (2,1)
+    const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 1)!;
+    midHex.owner = 'p1';
+    midHex.unit = makeUnit('p1', 1, 1, UnitType.KNIGHT, 'knight-auto');
+    gs.provinces.find((p) => p.owner === 'p1')!.hexes.push({ q: 1, r: 1 });
+
+    moveUnit(gs, 'p1', 'knight-auto', { q: 2, r: 1 });
+
+    // p2 should still have remaining hexes with a new capital
+    const p2Provinces = gs.provinces.filter((p) => p.owner === 'p2');
+    const p2Capitals = gs.hexes.filter(
+      (h) => h.structure?.type === StructureType.CAPITAL && h.structure?.owner === 'p2',
+    );
+
+    // If p2 has a province with 2+ hexes, it should have a new capital
+    const p2BigProvinces = p2Provinces.filter((p) => p.hexes.length >= 2);
+    if (p2BigProvinces.length > 0) {
+      expect(p2Capitals.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('can only buy units in province with capital', () => {
+    const gs = createTestGameState('cap-buy-test');
+    // Remove p1's capital
+    const capHex = gs.hexes.find(
+      (h) => h.structure?.type === StructureType.CAPITAL && h.structure.owner === 'p1',
+    )!;
+    capHex.structure = null;
+
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 })).toThrow(
+      'no capital',
+    );
+  });
+
+  it('capital provides no defense bonus', () => {
+    const gs = createTestGameState('cap-defense-test');
+    // Hex (1,0) has a capital. Check defense.
+    const capHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    expect(capHex.structure?.type).toBe(StructureType.CAPITAL);
+
+    // getHexDefense should not include capital defense (0)
+    const defense = getHexDefense(capHex, gs.hexes);
+    expect(defense).toBe(0);
+  });
+});
+
 // ── auto-skip, elimination, and last-player-wins ──
 
 describe('auto-skip, elimination, and win condition', () => {
@@ -909,11 +1140,17 @@ describe('auto-skip, elimination, and win condition', () => {
 
     const hexes: Hex[] = [
       makeHex(0, 0, 'p1', { unit: p1Unit }),
-      makeHex(1, 0, 'p1'),
+      makeHex(1, 0, 'p1', {
+        structure: { id: 'cap-p1-3p', type: StructureType.CAPITAL, owner: 'p1', hex: { q: 1, r: 0 }, strength: STRUCTURE_STRENGTH[StructureType.CAPITAL] },
+      }),
       makeHex(2, 0, 'p2', { unit: p2Unit }),
-      makeHex(2, 1, 'p2'),
+      makeHex(2, 1, 'p2', {
+        structure: { id: 'cap-p2-3p', type: StructureType.CAPITAL, owner: 'p2', hex: { q: 2, r: 1 }, strength: STRUCTURE_STRENGTH[StructureType.CAPITAL] },
+      }),
       makeHex(0, 1, 'p3', { unit: p3Unit }),
-      makeHex(1, 1, 'p3'),
+      makeHex(1, 1, 'p3', {
+        structure: { id: 'cap-p3-3p', type: StructureType.CAPITAL, owner: 'p3', hex: { q: 1, r: 1 }, strength: STRUCTURE_STRENGTH[StructureType.CAPITAL] },
+      }),
     ];
 
     return {
@@ -1025,11 +1262,21 @@ describe('auto-skip, elimination, and win condition', () => {
   it('eliminates player who loses all territory via capture', () => {
     const gs = createTestGameState('elim-test');
 
-    // Reduce p2 to a single hex with no unit
+    // Reduce p2 to a single hex with no unit or capital
     const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
     p2UnitHex.unit = null;
     const hex21 = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 1)!;
     hex21.owner = null;
+    hex21.structure = null;
+    const hex30 = gs.hexes.find((h) => h.coord.q === 3 && h.coord.r === 0)!;
+    hex30.owner = null;
+
+    // Recalculate so p2 province is just (2,0) with no capital
+    recalculateAllProvinces(gs);
+
+    // Clear capital on (1,0) so unit can move through
+    const capHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    capHex.structure = null;
 
     // Move p1's unit from (0,0) → (1,0)
     moveUnit(gs, 'p1', 'u1', { q: 1, r: 0 });
@@ -1038,7 +1285,7 @@ describe('auto-skip, elimination, and win condition', () => {
     const unitAt10 = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!.unit!;
     unitAt10.hasMoved = false;
 
-    // Capture p2's last hex (2,0)
+    // Capture p2's last hex (2,0) — no capital defense since (2,1) is gone
     moveUnit(gs, 'p1', 'u1', { q: 2, r: 0 });
 
     const p2 = gs.players.find((p) => p.id === 'p2')!;
@@ -1048,11 +1295,20 @@ describe('auto-skip, elimination, and win condition', () => {
   it('declares winner when last player standing', () => {
     const gs = createTestGameState('win-test');
 
-    // Reduce p2 to a single hex with no unit
+    // Reduce p2 to a single hex with no unit or capital
     const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
     p2UnitHex.unit = null;
     const hex21 = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 1)!;
     hex21.owner = null;
+    hex21.structure = null;
+    const hex30 = gs.hexes.find((h) => h.coord.q === 3 && h.coord.r === 0)!;
+    hex30.owner = null;
+
+    recalculateAllProvinces(gs);
+
+    // Clear capital on (1,0) so unit can move through
+    const capHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    capHex.structure = null;
 
     // Move p1's unit to capture p2's last hex
     moveUnit(gs, 'p1', 'u1', { q: 1, r: 0 });
@@ -1151,33 +1407,28 @@ describe('real-time income/upkeep updates', () => {
   });
 
   it('capturing new tile updates income immediately', () => {
+    // Use a deterministic setup: place p1 unit adjacent to a guaranteed neutral hex
     const unitHex = gs.hexes.find((h) => h.unit?.owner === 'p1');
     if (!unitHex) throw new Error('No p1 unit');
 
-    const incomeBefore = getP1TotalIncome();
+    // Pick the first neighbor coordinate
+    const neutralCoord = { q: unitHex.coord.q + 1, r: unitHex.coord.r };
 
-    // Find an adjacent neutral hex, or create one if none exists
-    const neighbors = [
-      { q: unitHex.coord.q + 1, r: unitHex.coord.r },
-      { q: unitHex.coord.q - 1, r: unitHex.coord.r },
-      { q: unitHex.coord.q, r: unitHex.coord.r + 1 },
-      { q: unitHex.coord.q, r: unitHex.coord.r - 1 },
-      { q: unitHex.coord.q + 1, r: unitHex.coord.r - 1 },
-      { q: unitHex.coord.q - 1, r: unitHex.coord.r + 1 },
-    ];
+    // Ensure a neutral land hex exists at that coordinate
     let neutralHex = gs.hexes.find(
-      (h) =>
-        h.owner === null &&
-        !h.hasTree &&
-        h.terrain !== TerrainType.WATER &&
-        neighbors.some((n) => n.q === h.coord.q && n.r === h.coord.r),
+      (h) => h.coord.q === neutralCoord.q && h.coord.r === neutralCoord.r,
     );
-    if (!neutralHex) {
-      // Force-create a neutral land hex adjacent to the unit
-      const coord = neighbors[0];
+    if (neutralHex) {
+      // Make it neutral and walkable
+      neutralHex.owner = null;
+      neutralHex.unit = null;
+      neutralHex.structure = null;
+      neutralHex.hasTree = false;
+      neutralHex.terrain = TerrainType.GRASS;
+    } else {
       neutralHex = {
-        coord,
-        terrain: TerrainType.PLAINS,
+        coord: neutralCoord,
+        terrain: TerrainType.GRASS,
         owner: null,
         unit: null,
         structure: null,
@@ -1186,7 +1437,11 @@ describe('real-time income/upkeep updates', () => {
       gs.hexes.push(neutralHex);
     }
 
-    moveUnit(gs, 'p1', unitHex.unit!.id, neutralHex.coord);
+    // Recalculate provinces so income reflects current state
+    recalculateAllProvinces(gs);
+    const incomeBefore = getP1TotalIncome();
+
+    moveUnit(gs, 'p1', unitHex.unit!.id, neutralCoord);
 
     const incomeAfter = getP1TotalIncome();
     // Captured a non-tree hex → income should increase by 1

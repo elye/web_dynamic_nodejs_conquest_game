@@ -38,10 +38,22 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
             <h3 className="text-white font-semibold mb-1">⚔️ Your Turn</h3>
             <ol className="list-decimal list-inside space-y-1">
               <li><strong>Move units</strong> — click a unit, then an adjacent hex.</li>
-              <li><strong>Buy units</strong> — select empty owned hex, click unit button.</li>
-              <li><strong>Build towers</strong> — select empty owned hex, click tower button.</li>
+              <li><strong>Buy units</strong> — select a hex in a province with a 🏛️ capital.</li>
+              <li><strong>Build towers</strong> — select an empty owned hex, click tower button.</li>
               <li>End turn when done.</li>
             </ol>
+          </section>
+
+          {/* Capitals */}
+          <section>
+            <h3 className="text-white font-semibold mb-1">🏛️ Capitals</h3>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Every province (2+ connected hexes) gets a capital automatically.</li>
+              <li>You need a capital to buy units in that province.</li>
+              <li>Capturing an enemy capital destroys their treasury (gold → 0).</li>
+              <li>If territory splits, the fragment with the capital keeps all gold. The new fragment gets a new capital with 0 gold.</li>
+              <li>Capitals provide +2 defense (like a Strong Tower).</li>
+            </ul>
           </section>
 
           {/* Units */}
@@ -63,22 +75,23 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
                 <tr><td className="py-1">🐴 Knight</td><td>4</td><td>40g</td><td>54g</td></tr>
               </tbody>
             </table>
+            <p className="mt-1 text-xs text-gray-400">Merge two units on the same hex to upgrade (e.g. Peasant + Peasant = Spearman).</p>
           </section>
 
           {/* Combat */}
           <section>
             <h3 className="text-white font-semibold mb-1">⚔️ Combat</h3>
-            <p>Stronger units beat weaker ones. Units must be stronger than defender + tower bonus.</p>
+            <p>Attacker must be stronger than defender + tower/capital defense bonus.</p>
           </section>
 
           {/* Economy */}
           <section>
             <h3 className="text-white font-semibold mb-1">💰 Economy</h3>
             <ul className="list-disc list-inside space-y-1">
-              <li>Each hex = 1 gold/turn income.</li>
+              <li>Each hex = 1 gold/turn income (per province).</li>
               <li>Units cost upkeep every turn.</li>
-              <li>🌲 Trees block income (0 gold). Move a unit onto them to chop.</li>
-              <li>☠️ If upkeep exceeds income and gold runs out, units starve.</li>
+              <li>🌲 Trees block income. Move a unit onto them to chop.</li>
+              <li>☠️ If a province goes bankrupt, all its units starve.</li>
             </ul>
           </section>
 
@@ -87,7 +100,8 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
             <h3 className="text-white font-semibold mb-1">🏗️ Structures</h3>
             <ul className="space-y-1">
               <li>🏰 <strong>Tower</strong> (15g) — +1 defense to hex and neighbors</li>
-              <li>🏯 <strong>Strong Tower</strong> (35g) — +2 defense, needs Knight to capture</li>
+              <li>🏯 <strong>Strong Tower</strong> (35g) — +2 defense</li>
+              <li>🏛️ <strong>Capital</strong> (auto) — +2 defense, required for buying units</li>
             </ul>
           </section>
 
@@ -95,9 +109,10 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
           <section>
             <h3 className="text-white font-semibold mb-1">💡 Tips</h3>
             <ul className="list-disc list-inside space-y-1">
-              <li>Merge same units to upgrade.</li>
-              <li>Split enemy territory.</li>
-              <li>Don&apos;t over-expand!</li>
+              <li>Protect your capitals — losing one means losing all that province&apos;s gold.</li>
+              <li>Target enemy capitals to cripple their economy.</li>
+              <li>Split enemy territory to create weak fragments with 0 gold.</li>
+              <li>Don&apos;t over-expand — watch your upkeep!</li>
             </ul>
           </section>
         </div>

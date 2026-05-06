@@ -27,7 +27,7 @@ interface GameStore {
   reset: () => void;
 }
 
-function computeValidMoves(hex: HexCoord, hexes: Hex[]): HexCoord[] {
+function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string): HexCoord[] {
   const hexMap = new Map<string, Hex>();
   for (const h of hexes) {
     hexMap.set(`${h.coord.q},${h.coord.r}`, h);
@@ -36,7 +36,10 @@ function computeValidMoves(hex: HexCoord, hexes: Hex[]): HexCoord[] {
   const neighbors = getHexNeighbors(hex.q, hex.r);
   return neighbors.filter((n) => {
     const target = hexMap.get(`${n.q},${n.r}`);
-    return target && target.terrain !== TerrainType.WATER;
+    if (!target || target.terrain === TerrainType.WATER) return false;
+    // Can't move onto own structure (capital, tower)
+    if (target.owner === currentPlayerId && target.structure) return false;
+    return true;
   });
 }
 
@@ -67,7 +70,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     if (hex.unit && hex.unit.owner === currentPlayerId && !hex.unit.hasMoved) {
-      const moves = computeValidMoves({ q, r }, state.hexes);
+      const moves = computeValidMoves({ q, r }, state.hexes, currentPlayerId);
       set({
         selectedHex: { q, r },
         selectedUnit: { unitId: hex.unit.id, hex: { q, r } },

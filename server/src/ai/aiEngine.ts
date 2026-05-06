@@ -226,8 +226,26 @@ function getEmptyOwnedHexes(gameState: GameState, playerId: string): Hex[] {
     (h) =>
       h.owner === playerId &&
       !h.unit &&
-      !h.structure &&
+      (!h.structure || h.structure.type === StructureType.CAPITAL) &&
       h.terrain !== TerrainType.WATER,
+  );
+}
+
+function findCapitalHexes(gameState: GameState, playerId: string): Hex[] {
+  return gameState.hexes.filter(
+    (h) =>
+      h.structure?.type === StructureType.CAPITAL &&
+      h.structure.owner === playerId,
+  );
+}
+
+function findEnemyCapitalHexes(gameState: GameState, playerId: string): Hex[] {
+  return gameState.hexes.filter(
+    (h) =>
+      h.structure?.type === StructureType.CAPITAL &&
+      h.structure.owner !== playerId &&
+      h.owner !== playerId &&
+      h.owner !== null,
   );
 }
 
@@ -372,13 +390,20 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
   // Move units toward nearest unowned/enemy land
   const moves = getValidMoves(gameState, playerId);
 
-  // Prioritize moves toward non-owned hexes
+  // Prioritize moves toward non-owned hexes, and also prioritize enemy capitals
+  const enemyCapitals = findEnemyCapitalHexes(gameState, playerId);
   const scored = moves.map((move) => {
     const targetHex = lookup.get(coordKey(move.to.q, move.to.r));
     let score = 0;
     if (targetHex) {
       if (targetHex.owner === null) score = 5; // Neutral expansion
-      else if (targetHex.owner !== playerId) score = 8; // Enemy capture
+      else if (targetHex.owner !== playerId) {
+        score = 8; // Enemy capture
+        // Bonus for attacking enemy capitals
+        if (targetHex.structure?.type === StructureType.CAPITAL) {
+          score += 10;
+        }
+      }
       else score = 1; // Own territory repositioning
     }
     return { move, score };
@@ -501,6 +526,7 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
   // 3. Move units strategically
   const moves = getValidMoves(gameState, playerId);
   const weakEnemyHexes = findWeakEnemyHexes(gameState, playerId);
+  const enemyCapitals = findEnemyCapitalHexes(gameState, playerId);
 
   const scored = moves.map((move) => {
     const targetHex = lookup.get(coordKey(move.to.q, move.to.r));
@@ -519,6 +545,8 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
         score = 15 + value;
         // Bonus for weak enemies
         if (defense === 0) score += 5;
+        // HIGH bonus for capturing enemy capitals
+        if (targetHex.structure?.type === StructureType.CAPITAL) score += 25;
         // Bonus for province splitting
         const enemyOwner = targetHex.owner;
         const enemyNeighbors = getHexNeighbors(move.to.q, move.to.r).filter((nc) => {
