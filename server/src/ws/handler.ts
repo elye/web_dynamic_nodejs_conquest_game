@@ -323,7 +323,7 @@ function handleMoveUnit(
 
   moveUnit(gameState, playerId, unitId, to);
 
-  broadcastToGame(gameId, {
+  sendToPlayer(playerId, {
     type: ServerMessageType.GAME_STATE_DELTA,
     delta: {
       hexes: gameState.hexes,
@@ -349,7 +349,7 @@ function handleBuyUnit(
 
   buyUnit(gameState, playerId, unitType, hex);
 
-  broadcastToGame(gameId, {
+  sendToPlayer(playerId, {
     type: ServerMessageType.GAME_STATE_DELTA,
     delta: {
       hexes: gameState.hexes,
@@ -371,7 +371,7 @@ function handleBuildStructure(
 
   buildStructure(gameState, playerId, structureType, hex);
 
-  broadcastToGame(gameId, {
+  sendToPlayer(playerId, {
     type: ServerMessageType.GAME_STATE_DELTA,
     delta: {
       hexes: gameState.hexes,
@@ -428,7 +428,7 @@ function handleUndoTurn(playerId: string, gameId: string): void {
 
   const restored = undoAction(gameId, playerId);
 
-  broadcastToGame(gameId, {
+  sendToPlayer(playerId, {
     type: ServerMessageType.GAME_STATE_FULL,
     state: restored,
   });
@@ -441,7 +441,7 @@ function handleRedoAction(playerId: string, gameId: string): void {
 
   const restored = redoAction(gameId, playerId);
 
-  broadcastToGame(gameId, {
+  sendToPlayer(playerId, {
     type: ServerMessageType.GAME_STATE_FULL,
     state: restored,
   });
