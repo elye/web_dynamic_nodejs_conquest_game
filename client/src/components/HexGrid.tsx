@@ -202,6 +202,21 @@ export default function HexGrid({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(hex.unit.strength), cx, badgeY);
+
+        // Moved indicator — show a "✓" badge for current player's units that have moved
+        if (hex.unit.hasMoved && hex.unit.owner === currentPlayerId) {
+          const checkX = cx + size * 0.3;
+          const checkY = cy - size * 0.35;
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          ctx.beginPath();
+          ctx.arc(checkX, checkY, size * 0.14, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.font = `bold ${Math.round(size * 0.2)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('✓', checkX, checkY);
+        }
       }
 
       // Death marker (starvation)

@@ -823,6 +823,80 @@ describe('undoAction / redoAction', () => {
   it("can't undo when it's not your turn", () => {
     expect(() => undoAction(gameId, 'p2')).toThrow('Not your turn');
   });
+
+  it('undo restores hasMoved to false after move', () => {
+    const unitHex = gs.hexes.find((h) => h.unit?.owner === 'p1');
+    if (!unitHex) throw new Error('No p1 unit found');
+    const unitId = unitHex.unit!.id;
+
+    // Find an adjacent valid target
+    const neighbors = [
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q, r: unitHex.coord.r + 1 },
+      { q: unitHex.coord.q, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r + 1 },
+    ];
+    let targetCoord = null;
+    for (const nc of neighbors) {
+      const hex = gs.hexes.find((h) => h.coord.q === nc.q && h.coord.r === nc.r);
+      if (hex && hex.terrain !== TerrainType.WATER && (hex.owner === 'p1' || hex.owner === null) && !hex.unit) {
+        targetCoord = nc;
+        break;
+      }
+    }
+    if (!targetCoord) throw new Error('No valid adjacent target');
+
+    // Move — hasMoved should become true
+    moveUnit(gs, 'p1', unitId, targetCoord);
+    const movedGs = getGameState(gameId)!;
+    const movedUnit = movedGs.hexes.find(
+      (h) => h.coord.q === targetCoord!.q && h.coord.r === targetCoord!.r,
+    );
+    expect(movedUnit!.unit!.hasMoved).toBe(true);
+
+    // Undo — hasMoved should revert to false
+    const restored = undoAction(gameId, 'p1');
+    const restoredUnit = restored.hexes.find(
+      (h) => h.coord.q === unitHex.coord.q && h.coord.r === unitHex.coord.r,
+    );
+    expect(restoredUnit!.unit!.hasMoved).toBe(false);
+  });
+
+  it('redo restores hasMoved to true after undo', () => {
+    const unitHex = gs.hexes.find((h) => h.unit?.owner === 'p1');
+    if (!unitHex) throw new Error('No p1 unit found');
+    const unitId = unitHex.unit!.id;
+
+    const neighbors = [
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q, r: unitHex.coord.r + 1 },
+      { q: unitHex.coord.q, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r + 1 },
+    ];
+    let targetCoord = null;
+    for (const nc of neighbors) {
+      const hex = gs.hexes.find((h) => h.coord.q === nc.q && h.coord.r === nc.r);
+      if (hex && hex.terrain !== TerrainType.WATER && (hex.owner === 'p1' || hex.owner === null) && !hex.unit) {
+        targetCoord = nc;
+        break;
+      }
+    }
+    if (!targetCoord) throw new Error('No valid adjacent target');
+
+    // Move, undo, then redo
+    moveUnit(gs, 'p1', unitId, targetCoord);
+    undoAction(gameId, 'p1');
+    const redone = redoAction(gameId, 'p1');
+
+    const redoneUnit = redone.hexes.find(
+      (h) => h.coord.q === targetCoord!.q && h.coord.r === targetCoord!.r,
+    );
+    expect(redoneUnit!.unit!.hasMoved).toBe(true);
+  });
 });
 
 // ── auto-skip, elimination, and last-player-wins ──
@@ -1082,7 +1156,7 @@ describe('real-time income/upkeep updates', () => {
 
     const incomeBefore = getP1TotalIncome();
 
-    // Find an adjacent neutral hex
+    // Find an adjacent neutral hex, or create one if none exists
     const neighbors = [
       { q: unitHex.coord.q + 1, r: unitHex.coord.r },
       { q: unitHex.coord.q - 1, r: unitHex.coord.r },
@@ -1091,14 +1165,26 @@ describe('real-time income/upkeep updates', () => {
       { q: unitHex.coord.q + 1, r: unitHex.coord.r - 1 },
       { q: unitHex.coord.q - 1, r: unitHex.coord.r + 1 },
     ];
-    const neutralHex = gs.hexes.find(
+    let neutralHex = gs.hexes.find(
       (h) =>
         h.owner === null &&
         !h.hasTree &&
         h.terrain !== TerrainType.WATER &&
         neighbors.some((n) => n.q === h.coord.q && n.r === h.coord.r),
     );
-    if (!neutralHex) throw new Error('No adjacent neutral hex');
+    if (!neutralHex) {
+      // Force-create a neutral land hex adjacent to the unit
+      const coord = neighbors[0];
+      neutralHex = {
+        coord,
+        terrain: TerrainType.PLAINS,
+        owner: null,
+        unit: null,
+        structure: null,
+        hasTree: false,
+      };
+      gs.hexes.push(neutralHex);
+    }
 
     moveUnit(gs, 'p1', unitHex.unit!.id, neutralHex.coord);
 
