@@ -823,3 +823,169 @@ describe('undoAction / redoAction', () => {
     expect(() => undoAction(gameId, 'p2')).toThrow('Not your turn');
   });
 });
+
+// ── auto-skip, elimination, and last-player-wins ──
+
+describe('auto-skip, elimination, and win condition', () => {
+  function create3PlayerGameState(): GameState {
+    const p1Unit = makeUnit('p1', 0, 0, UnitType.PEASANT, 'u1');
+    const p2Unit = makeUnit('p2', 2, 0, UnitType.PEASANT, 'u2');
+    const p3Unit = makeUnit('p3', 0, 1, UnitType.PEASANT, 'u3');
+
+    const hexes: Hex[] = [
+      makeHex(0, 0, 'p1', { unit: p1Unit }),
+      makeHex(1, 0, 'p1'),
+      makeHex(2, 0, 'p2', { unit: p2Unit }),
+      makeHex(2, 1, 'p2'),
+      makeHex(0, 1, 'p3', { unit: p3Unit }),
+      makeHex(1, 1, 'p3'),
+    ];
+
+    return {
+      id: 'skip-test',
+      status: GameStatus.IN_PROGRESS,
+      settings: { mapWidth: 10, mapHeight: 10, maxPlayers: 3, turnTimeLimit: 60000, startingGold: 20 },
+      players: [
+        { id: 'p1', name: 'P1', color: '#e74c3c', isAI: false, isConnected: true, isEliminated: false, gold: 20, provinces: ['prov-p1'], ready: true },
+        { id: 'p2', name: 'P2', color: '#3498db', isAI: false, isConnected: true, isEliminated: false, gold: 20, provinces: ['prov-p2'], ready: true },
+        { id: 'p3', name: 'P3', color: '#2ecc71', isAI: false, isConnected: true, isEliminated: false, gold: 20, provinces: ['prov-p3'], ready: true },
+      ],
+      hexes,
+      provinces: [
+        { id: 'prov-p1', hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }], owner: 'p1', gold: 50, income: 2, upkeep: UNIT_UPKEEP[UnitType.PEASANT] },
+        { id: 'prov-p2', hexes: [{ q: 2, r: 0 }, { q: 2, r: 1 }], owner: 'p2', gold: 50, income: 2, upkeep: UNIT_UPKEEP[UnitType.PEASANT] },
+        { id: 'prov-p3', hexes: [{ q: 0, r: 1 }, { q: 1, r: 1 }], owner: 'p3', gold: 50, income: 2, upkeep: UNIT_UPKEEP[UnitType.PEASANT] },
+      ],
+      currentTurnPlayerId: 'p1',
+      turnNumber: 1,
+      turnStartedAt: Date.now(),
+      history: [],
+      winnerId: null,
+      createdAt: Date.now(),
+    };
+  }
+
+  it('skips turn when player has no units and cannot afford any', () => {
+    const gs = create3PlayerGameState();
+
+    // Remove p2's unit and zero out their gold
+    const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    p2UnitHex.unit = null;
+    const p2Prov = gs.provinces.find((p) => p.owner === 'p2')!;
+    p2Prov.gold = 0;
+    p2Prov.upkeep = 0;
+
+    endTurn(gs);
+
+    // p2 should be skipped → current player is p3
+    expect(gs.currentTurnPlayerId).toBe('p3');
+  });
+
+  it('does NOT skip turn when player has units', () => {
+    const gs = create3PlayerGameState();
+    // p2 has a unit by default
+    endTurn(gs);
+    expect(gs.currentTurnPlayerId).toBe('p2');
+  });
+
+  it('does NOT skip turn when player has gold to buy units', () => {
+    const gs = create3PlayerGameState();
+
+    // Remove p2's unit but leave enough gold to buy a peasant
+    const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    p2UnitHex.unit = null;
+    const p2Prov = gs.provinces.find((p) => p.owner === 'p2')!;
+    p2Prov.gold = 10; // exactly enough for a peasant (UNIT_COST[PEASANT] = 10)
+    p2Prov.upkeep = 0;
+
+    endTurn(gs);
+
+    expect(gs.currentTurnPlayerId).toBe('p2');
+  });
+
+  it('chains skips for multiple consecutive bankrupt players', () => {
+    const p1Unit = makeUnit('p1', 0, 0, UnitType.PEASANT, 'u1');
+    const p4Unit = makeUnit('p4', 1, 1, UnitType.PEASANT, 'u4');
+
+    const hexes: Hex[] = [
+      makeHex(0, 0, 'p1', { unit: p1Unit }),
+      makeHex(1, 0, 'p2'),
+      makeHex(2, 0, 'p3'),
+      makeHex(0, 1, 'p1'),
+      makeHex(1, 1, 'p4', { unit: p4Unit }),
+      makeHex(2, 1, 'p4'),
+    ];
+
+    const gs: GameState = {
+      id: 'chain-skip-test',
+      status: GameStatus.IN_PROGRESS,
+      settings: { mapWidth: 10, mapHeight: 10, maxPlayers: 4, turnTimeLimit: 60000, startingGold: 20 },
+      players: [
+        { id: 'p1', name: 'P1', color: '#e74c3c', isAI: false, isConnected: true, isEliminated: false, gold: 20, provinces: ['prov-p1'], ready: true },
+        { id: 'p2', name: 'P2', color: '#3498db', isAI: false, isConnected: true, isEliminated: false, gold: 20, provinces: ['prov-p2'], ready: true },
+        { id: 'p3', name: 'P3', color: '#2ecc71', isAI: false, isConnected: true, isEliminated: false, gold: 20, provinces: ['prov-p3'], ready: true },
+        { id: 'p4', name: 'P4', color: '#f39c12', isAI: false, isConnected: true, isEliminated: false, gold: 20, provinces: ['prov-p4'], ready: true },
+      ],
+      hexes,
+      provinces: [
+        { id: 'prov-p1', hexes: [{ q: 0, r: 0 }, { q: 0, r: 1 }], owner: 'p1', gold: 50, income: 2, upkeep: UNIT_UPKEEP[UnitType.PEASANT] },
+        { id: 'prov-p2', hexes: [{ q: 1, r: 0 }], owner: 'p2', gold: 0, income: 1, upkeep: 0 },
+        { id: 'prov-p3', hexes: [{ q: 2, r: 0 }], owner: 'p3', gold: 0, income: 1, upkeep: 0 },
+        { id: 'prov-p4', hexes: [{ q: 1, r: 1 }, { q: 2, r: 1 }], owner: 'p4', gold: 50, income: 2, upkeep: UNIT_UPKEEP[UnitType.PEASANT] },
+      ],
+      currentTurnPlayerId: 'p1',
+      turnNumber: 1,
+      turnStartedAt: Date.now(),
+      history: [],
+      winnerId: null,
+      createdAt: Date.now(),
+    };
+
+    endTurn(gs);
+
+    // p2 and p3 both have no units and no gold → both skipped
+    expect(gs.currentTurnPlayerId).toBe('p4');
+  });
+
+  it('eliminates player who loses all territory via capture', () => {
+    const gs = createTestGameState('elim-test');
+
+    // Reduce p2 to a single hex with no unit
+    const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    p2UnitHex.unit = null;
+    const hex21 = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 1)!;
+    hex21.owner = null;
+
+    // Move p1's unit from (0,0) → (1,0)
+    moveUnit(gs, 'p1', 'u1', { q: 1, r: 0 });
+
+    // Reset hasMoved so unit can move again
+    const unitAt10 = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!.unit!;
+    unitAt10.hasMoved = false;
+
+    // Capture p2's last hex (2,0)
+    moveUnit(gs, 'p1', 'u1', { q: 2, r: 0 });
+
+    const p2 = gs.players.find((p) => p.id === 'p2')!;
+    expect(p2.isEliminated).toBe(true);
+  });
+
+  it('declares winner when last player standing', () => {
+    const gs = createTestGameState('win-test');
+
+    // Reduce p2 to a single hex with no unit
+    const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    p2UnitHex.unit = null;
+    const hex21 = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 1)!;
+    hex21.owner = null;
+
+    // Move p1's unit to capture p2's last hex
+    moveUnit(gs, 'p1', 'u1', { q: 1, r: 0 });
+    const unitAt10 = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!.unit!;
+    unitAt10.hasMoved = false;
+    moveUnit(gs, 'p1', 'u1', { q: 2, r: 0 });
+
+    expect(gs.status).toBe(GameStatus.FINISHED);
+    expect(gs.winnerId).toBe('p1');
+  });
+});

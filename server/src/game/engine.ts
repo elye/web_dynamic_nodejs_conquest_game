@@ -80,6 +80,29 @@ const UNIT_MERGE_MAP: Record<string, UnitType> = {
 
 const TREE_SPREAD_CHANCE = 0.1;
 
+function canPlayerAct(gameState: GameState, playerId: string): boolean {
+  const hasUnits = gameState.hexes.some(
+    (h) => h.unit && h.unit.owner === playerId,
+  );
+  if (hasUnits) return true;
+
+  const cheapestCost = UNIT_COST[UnitType.PEASANT];
+  return gameState.provinces
+    .filter((p) => p.owner === playerId)
+    .some((p) => p.gold >= cheapestCost);
+}
+
+function checkEliminations(gameState: GameState): void {
+  for (const player of gameState.players) {
+    if (player.isEliminated) continue;
+    const hasHexes = gameState.hexes.some((h) => h.owner === player.id);
+    if (!hasHexes) {
+      player.isEliminated = true;
+    }
+  }
+  checkWinCondition(gameState);
+}
+
 // ── Game store for GameState instances ──
 
 const gameStates = new Map<string, GameState>();
@@ -299,6 +322,9 @@ export function moveUnit(
         .filter((p) => p.owner === player.id)
         .map((p) => p.id);
     }
+
+    // Check if any player lost all territory
+    checkEliminations(gameState);
   }
 
   // Remove tree if present
@@ -513,6 +539,9 @@ export function endTurn(gameState: GameState): GameState {
     }
   }
 
+  // Check if any player lost all territory after starvation
+  checkEliminations(gameState);
+
   // Determine if this is the end of a full round
   const activePlayers = gameState.players.filter((p) => !p.isEliminated);
   const currentIdx = activePlayers.findIndex(
@@ -582,6 +611,34 @@ export function endTurn(gameState: GameState): GameState {
 
   // Check win condition
   checkWinCondition(gameState);
+
+  // Auto-skip players who can't act (no units and can't afford any)
+  if (gameState.status !== GameStatus.FINISHED) {
+    const activeCount = gameState.players.filter(
+      (p) => !p.isEliminated,
+    ).length;
+    let skips = 0;
+
+    while (
+      skips < activeCount &&
+      gameState.status !== GameStatus.FINISHED &&
+      !canPlayerAct(gameState, gameState.currentTurnPlayerId)
+    ) {
+      const skipPlayer = getNextPlayer(gameState);
+      if (!skipPlayer) break;
+
+      gameState.currentTurnPlayerId = skipPlayer.id;
+      gameState.turnStartedAt = Date.now();
+
+      for (const hex of gameState.hexes) {
+        if (hex.unit && hex.unit.owner === skipPlayer.id) {
+          hex.unit.hasMoved = false;
+        }
+      }
+
+      skips++;
+    }
+  }
 
   // Clear snapshot stack and redo stack for the new turn
   turnSnapshotStacks.set(gameState.id, []);
