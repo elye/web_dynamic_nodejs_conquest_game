@@ -185,6 +185,7 @@ function createTestGameState(gameId: string = 'test-game'): GameState {
     history: [],
     winnerId: null,
     createdAt: Date.now(),
+    pendingGoldCaptures: {},
   };
 
   return gameState;
@@ -1686,5 +1687,186 @@ describe('real-time income/upkeep updates', () => {
       .filter((p) => p.owner === 'p1')
       .reduce((sum, p) => sum + p.upkeep, 0);
     expect(upkeepAfterRedo).toBe(upkeepBefore + UNIT_UPKEEP[UnitType.PEASANT]);
+  });
+});
+
+// ── Gold capture from enemy capitals ──
+
+describe('gold capture from enemy capitals', () => {
+  const gameId = 'gold-capture-test';
+
+  function createGoldCaptureState(): GameState {
+    // p1 has a knight at (1,0) that can attack p2's capital at (2,0)
+    // p2's capital is in a province with gold
+    const p1Unit = makeUnit('p1', 1, 0, UnitType.KNIGHT, 'u1');
+
+    const hexes: Hex[] = [
+      makeHex(0, 0, 'p1', {
+        structure: {
+          id: 'cap-p1',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 0, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
+      makeHex(1, 0, 'p1', { unit: p1Unit }),
+      makeHex(2, 0, 'p2', {
+        structure: {
+          id: 'cap-p2',
+          type: StructureType.CAPITAL,
+          owner: 'p2',
+          hex: { q: 2, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
+      makeHex(3, 0, 'p2'),
+      makeHex(0, 1, 'p1'),
+      makeHex(2, 1, 'p2'),
+    ];
+
+    const province1: Province = {
+      id: 'prov-p1',
+      hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 0, r: 1 }],
+      owner: 'p1',
+      gold: 30,
+      income: 3,
+      upkeep: UNIT_UPKEEP[UnitType.KNIGHT],
+    };
+
+    const province2: Province = {
+      id: 'prov-p2',
+      hexes: [{ q: 2, r: 0 }, { q: 3, r: 0 }, { q: 2, r: 1 }],
+      owner: 'p2',
+      gold: 75,
+      income: 3,
+      upkeep: 0,
+    };
+
+    const gs: GameState = {
+      id: gameId,
+      status: GameStatus.IN_PROGRESS,
+      settings: {
+        mapWidth: 10,
+        mapHeight: 10,
+        maxPlayers: 2,
+        turnTimeLimit: 60000,
+        startingGold: 20,
+      },
+      players: [
+        {
+          id: 'p1',
+          name: 'Player 1',
+          color: '#e74c3c',
+          isAI: false,
+          isConnected: true,
+          isEliminated: false,
+          gold: 20,
+          provinces: ['prov-p1'],
+          ready: true,
+        },
+        {
+          id: 'p2',
+          name: 'Player 2',
+          color: '#3498db',
+          isAI: false,
+          isConnected: true,
+          isEliminated: false,
+          gold: 20,
+          provinces: ['prov-p2'],
+          ready: true,
+        },
+      ],
+      hexes,
+      provinces: [province1, province2],
+      currentTurnPlayerId: 'p1',
+      turnNumber: 1,
+      turnStartedAt: Date.now(),
+      history: [],
+      winnerId: null,
+      createdAt: Date.now(),
+      pendingGoldCaptures: {},
+    };
+
+    // Register in engine so undo/redo works
+    createTestRoom(gameId, ['p1', 'p2']);
+    // startGame registers the state; we'll replace it after
+    const started = startGame(gameId);
+    // Overwrite with our controlled state
+    Object.assign(started, gs);
+    // Copy hexes/provinces by reference so engine sees them
+    return started;
+  }
+
+  beforeEach(() => {
+    gameStore.deleteGame(gameId);
+  });
+
+  it('stores captured gold in pendingGoldCaptures when capturing enemy capital', () => {
+    const gs = createGoldCaptureState();
+
+    // p1's knight at (1,0) attacks p2's capital at (2,0)
+    // p2's province has 75 gold
+    moveUnit(gs, 'p1', 'u1', { q: 2, r: 0 });
+
+    // The capital should be destroyed
+    const capturedHex = gs.hexes.find(
+      (h) => h.coord.q === 2 && h.coord.r === 0,
+    );
+    expect(capturedHex?.structure).toBeNull();
+
+    // Gold should be in pendingGoldCaptures, not yet in p1's province
+    expect(gs.pendingGoldCaptures['p1']).toBe(75);
+  });
+
+  it('applies pending gold to richest province at end of turn', () => {
+    const gs = createGoldCaptureState();
+
+    // Give p2 a unit so auto-skip doesn't trigger (which would process p1's income/upkeep)
+    const p2UnitHex = gs.hexes.find(
+      (h) => h.coord.q === 3 && h.coord.r === 0,
+    )!;
+    p2UnitHex.unit = makeUnit('p2', 3, 0, UnitType.PEASANT, 'u2');
+
+    // Capture the capital
+    moveUnit(gs, 'p1', 'u1', { q: 2, r: 0 });
+    expect(gs.pendingGoldCaptures['p1']).toBe(75);
+
+    // Find p1's province gold before endTurn
+    const p1ProvsBefore = gs.provinces.filter((p) => p.owner === 'p1');
+    const totalGoldBefore = p1ProvsBefore.reduce((sum, p) => sum + p.gold, 0);
+
+    // End p1's turn — pending gold should be applied
+    endTurn(gs);
+
+    // pendingGoldCaptures should be cleared
+    expect(gs.pendingGoldCaptures['p1']).toBeUndefined();
+
+    // p1's provinces should have received the captured gold
+    // (no income/upkeep processed for p1 since it's now p2's turn)
+    const p1ProvsAfter = gs.provinces.filter((p) => p.owner === 'p1');
+    const totalGoldAfter = p1ProvsAfter.reduce((sum, p) => sum + p.gold, 0);
+
+    expect(totalGoldAfter).toBe(totalGoldBefore + 75);
+  });
+
+  it('undo after capital capture removes pending gold', () => {
+    const gs = createGoldCaptureState();
+
+    // Capture the capital
+    moveUnit(gs, 'p1', 'u1', { q: 2, r: 0 });
+    expect(gs.pendingGoldCaptures['p1']).toBe(75);
+
+    // Undo
+    const restored = undoAction(gameId, 'p1');
+
+    // Pending gold should be gone (restored from snapshot before the move)
+    expect(restored.pendingGoldCaptures['p1']).toBeUndefined();
+
+    // p2's capital should be back
+    const capitalHex = restored.hexes.find(
+      (h) => h.coord.q === 2 && h.coord.r === 0,
+    );
+    expect(capitalHex?.structure?.type).toBe(StructureType.CAPITAL);
   });
 });

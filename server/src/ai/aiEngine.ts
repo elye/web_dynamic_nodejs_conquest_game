@@ -402,6 +402,11 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
         // Bonus for attacking enemy capitals
         if (targetHex.structure?.type === StructureType.CAPITAL) {
           score += 10;
+          // Extra bonus proportional to province gold (every 5 gold = +1)
+          const province = gameState.provinces.find((p) =>
+            p.hexes.some((h) => h.q === move.to.q && h.r === move.to.r)
+          );
+          if (province) score += Math.floor(province.gold / 5);
         }
       }
       else score = 1; // Own territory repositioning
@@ -546,7 +551,14 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
         // Bonus for weak enemies
         if (defense === 0) score += 5;
         // HIGH bonus for capturing enemy capitals
-        if (targetHex.structure?.type === StructureType.CAPITAL) score += 25;
+        if (targetHex.structure?.type === StructureType.CAPITAL) {
+          score += 25;
+          // Extra bonus proportional to province gold (every 3 gold = +1)
+          const province = gameState.provinces.find((p) =>
+            p.hexes.some((h) => h.q === move.to.q && h.r === move.to.r)
+          );
+          if (province) score += Math.floor(province.gold / 3);
+        }
         // Bonus for province splitting
         const enemyOwner = targetHex.owner;
         const enemyNeighbors = getHexNeighbors(move.to.q, move.to.r).filter((nc) => {

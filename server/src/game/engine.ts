@@ -184,6 +184,7 @@ export function startGame(gameId: string): GameState {
     history: [],
     winnerId: null,
     createdAt: Date.now(),
+    pendingGoldCaptures: {},
   };
 
   // Calculate initial provinces for each player
@@ -345,6 +346,21 @@ export function moveUnit(
 
     // Destroy enemy structure on capture
     if (targetHex.structure && targetHex.structure.owner !== playerId) {
+      // Capture gold from enemy capital
+      if (targetHex.structure.type === StructureType.CAPITAL) {
+        const enemyProvince = findProvinceForHex(
+          gameState.provinces,
+          toHex,
+          targetHex.structure.owner,
+        );
+        if (enemyProvince && enemyProvince.gold > 0) {
+          if (!gameState.pendingGoldCaptures) {
+            gameState.pendingGoldCaptures = {};
+          }
+          gameState.pendingGoldCaptures[playerId] =
+            (gameState.pendingGoldCaptures[playerId] ?? 0) + enemyProvince.gold;
+        }
+      }
       targetHex.structure = null;
     }
 
@@ -640,6 +656,22 @@ export function endTurn(gameState: GameState): GameState {
     player.provinces = gameState.provinces
       .filter((p) => p.owner === player.id)
       .map((p) => p.id);
+  }
+
+  // Apply pending gold captures for the player who just ended their turn
+  const pendingGold = gameState.pendingGoldCaptures?.[currentPlayerId];
+  if (pendingGold && pendingGold > 0) {
+    const capturerProvinces = gameState.provinces.filter(
+      (p) => p.owner === currentPlayerId,
+    );
+    if (capturerProvinces.length > 0) {
+      // Add to the richest province
+      const richest = capturerProvinces.reduce((best, p) =>
+        p.gold > best.gold ? p : best,
+      );
+      richest.gold += pendingGold;
+    }
+    delete gameState.pendingGoldCaptures[currentPlayerId];
   }
 
   // Process income and upkeep for the NEW current player's provinces

@@ -130,6 +130,7 @@ export interface GameState {
   history: GameAction[];
   winnerId: string | null;
   createdAt: number;
+  pendingGoldCaptures: Record<string, number>;
 }
 
 // ── Game Room (Lobby) ──
