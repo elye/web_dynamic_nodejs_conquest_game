@@ -1119,6 +1119,7 @@ describe('Capital System', () => {
       turnStartedAt: Date.now(),
       history: [],
       winnerId: null,
+      pendingGoldCaptures: {},
       createdAt: Date.now(),
     };
 
@@ -1281,6 +1282,7 @@ describe('Capital System', () => {
       turnStartedAt: Date.now(),
       history: [],
       winnerId: null,
+      pendingGoldCaptures: {},
       createdAt: Date.now(),
     };
 
@@ -1376,6 +1378,7 @@ describe('auto-skip, elimination, and win condition', () => {
       turnStartedAt: Date.now(),
       history: [],
       winnerId: null,
+      pendingGoldCaptures: {},
       createdAt: Date.now(),
     };
   }
@@ -1455,6 +1458,7 @@ describe('auto-skip, elimination, and win condition', () => {
       turnStartedAt: Date.now(),
       history: [],
       winnerId: null,
+      pendingGoldCaptures: {},
       createdAt: Date.now(),
     };
 

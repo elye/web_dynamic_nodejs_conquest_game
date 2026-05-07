@@ -802,7 +802,7 @@ export function endTurn(gameState: GameState): GameState {
 
     while (
       skips < activeCount &&
-      gameState.status !== GameStatus.FINISHED &&
+      (gameState.status as GameStatus) !== GameStatus.FINISHED &&
       !canPlayerAct(gameState, gameState.currentTurnPlayerId)
     ) {
       const skipPlayer = getNextPlayer(gameState);

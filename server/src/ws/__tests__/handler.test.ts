@@ -234,7 +234,7 @@ describe('WebSocket handler – mid-turn vs end-turn message routing', () => {
     sendMessage(client1.ws, {
       type: ClientMessageType.MOVE_UNIT,
       unitId: p1Unit!.id,
-      from: unitHex.coord,
+      from: unitHex!.coord,
       to: targetHex!.coord,
     });
 
