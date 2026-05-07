@@ -1493,7 +1493,7 @@ describe('auto-skip, elimination, and win condition', () => {
     expect(p1ProvAfter.gold).toBe(p1GoldBefore + p1Income - p1Upkeep);
   });
 
-  it('eliminates player who loses all territory via capture', () => {
+  it('eliminates player who loses all territory via capture (at end of turn)', () => {
     const gs = createTestGameState('elim-test');
 
     // Reduce p2 to a single hex with no unit or capital
@@ -1519,14 +1519,21 @@ describe('auto-skip, elimination, and win condition', () => {
     const unitAt10 = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!.unit!;
     unitAt10.hasMoved = false;
 
-    // Capture p2's last hex (2,0) — no capital defense since (2,1) is gone
+    // Capture p2's last hex (2,0)
     moveUnit(gs, 'p1', 'u1', { q: 2, r: 0 });
+
+    // Not eliminated yet (mid-turn)
+    const p2Before = gs.players.find((p) => p.id === 'p2')!;
+    expect(p2Before.isEliminated).toBe(false);
+
+    // End turn — now elimination is checked
+    endTurn(gs);
 
     const p2 = gs.players.find((p) => p.id === 'p2')!;
     expect(p2.isEliminated).toBe(true);
   });
 
-  it('declares winner when last player standing', () => {
+  it('declares winner when last player standing (at end of turn)', () => {
     const gs = createTestGameState('win-test');
 
     // Reduce p2 to a single hex with no unit or capital
@@ -1549,6 +1556,12 @@ describe('auto-skip, elimination, and win condition', () => {
     const unitAt10 = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!.unit!;
     unitAt10.hasMoved = false;
     moveUnit(gs, 'p1', 'u1', { q: 2, r: 0 });
+
+    // Not finished yet (mid-turn)
+    expect(gs.status).toBe(GameStatus.IN_PROGRESS);
+
+    // End turn — now win is checked
+    endTurn(gs);
 
     expect(gs.status).toBe(GameStatus.FINISHED);
     expect(gs.winnerId).toBe('p1');

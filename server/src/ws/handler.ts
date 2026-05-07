@@ -342,8 +342,6 @@ function handleMoveUnit(
       winnerId: gameState.winnerId,
     },
   });
-
-  checkAndBroadcastGameOver(gameState, gameId);
 }
 
 function handleBuyUnit(

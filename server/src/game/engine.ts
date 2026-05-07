@@ -407,9 +407,6 @@ export function moveUnit(
         .filter((p) => p.owner === player.id)
         .map((p) => p.id);
     }
-
-    // Check if any player lost all territory
-    checkEliminations(gameState);
   }
 
   // Remove tree if present
