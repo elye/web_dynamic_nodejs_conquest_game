@@ -453,6 +453,57 @@ describe('buyUnit', () => {
     const mergedHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
     expect(mergedHex!.unit!.type).toBe(UnitType.SPEARMAN);
   });
+
+  it("can't promote a unit that has already moved", () => {
+    // Place a peasant that has already moved, then try to buy on same hex
+    const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    hex.unit = makeUnit('p1', -1, 0, UnitType.PEASANT, 'moved-unit');
+    hex.unit.hasMoved = true;
+
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 })).toThrow(
+      'already acted this turn',
+    );
+  });
+
+  it("can't move a unit that was just bought", () => {
+    // Buy a unit, then try to move it
+    buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
+    const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    expect(hex.unit!.hasMoved).toBe(true);
+
+    expect(() => moveUnit(gs, 'p1', hex.unit!.id, { q: 0, r: 0 })).toThrow(
+      'already moved',
+    );
+  });
+
+  it("can't move a unit that was just promoted via buy", () => {
+    // Place a peasant, promote it by buying another peasant on same hex
+    const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    hex.unit = makeUnit('p1', -1, 0, UnitType.PEASANT, 'to-promote');
+
+    buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
+    expect(hex.unit!.type).toBe(UnitType.SPEARMAN);
+    expect(hex.unit!.hasMoved).toBe(true);
+
+    expect(() => moveUnit(gs, 'p1', 'to-promote', { q: 0, r: 0 })).toThrow(
+      'already moved',
+    );
+  });
+
+  it("can't promote a unit that was merged via move", () => {
+    // Merge two peasants by moving, then try to buy-promote the merged unit
+    const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    midHex.structure = null;
+    midHex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'merge-target');
+
+    moveUnit(gs, 'p1', 'u1', { q: 1, r: 0 });
+    expect(midHex.unit!.type).toBe(UnitType.SPEARMAN);
+    expect(midHex.unit!.hasMoved).toBe(true);
+
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 })).toThrow(
+      'already acted this turn',
+    );
+  });
 });
 
 // ── buildStructure ──

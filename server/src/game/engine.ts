@@ -440,6 +440,9 @@ export function buyUnit(
 
   // Handle merging: if hex has a unit, try to merge
   if (targetHex.unit) {
+    if (targetHex.unit.hasMoved) {
+      throw new Error('Unit has already acted this turn — cannot promote');
+    }
     const mergeKey = `${targetHex.unit.type}+${unitType}`;
     const mergedType = UNIT_MERGE_MAP[mergeKey];
     if (!mergedType) {
