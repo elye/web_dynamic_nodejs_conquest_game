@@ -92,7 +92,10 @@ export default function GamePage() {
         const winnerName =
           gameState?.players.find((p) => p.id === msg.winnerId)?.name ??
           msg.winnerId;
-        setGameOverMsg(`${winnerName} wins! ${msg.reason}`);
+        // Delay so the board renders the final captured tile before showing the dialog
+        setTimeout(() => {
+          setGameOverMsg(`${winnerName} wins! ${msg.reason}`);
+        }, 800);
         break;
       }
       case ServerMessageType.CHAT_BROADCAST:

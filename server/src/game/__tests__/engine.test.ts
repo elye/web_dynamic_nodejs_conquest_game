@@ -1369,6 +1369,35 @@ describe('auto-skip, elimination, and win condition', () => {
     expect(gs.currentTurnPlayerId).toBe('p4');
   });
 
+  it('processes income for the player whose turn starts after an auto-skip', () => {
+    const gs = createTestGameState('skip-income-test');
+
+    // Remove p2's unit, capital, and zero out gold so p2 can't act
+    const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    p2UnitHex.unit = null;
+    const p2CapHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 1)!;
+    p2CapHex.structure = null;
+    const p2Prov = gs.provinces.find((p) => p.owner === 'p2')!;
+    p2Prov.gold = 0;
+    p2Prov.upkeep = 0;
+
+    // Record p1's province state before ending turn
+    const p1Prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    const p1GoldBefore = p1Prov.gold;
+    const p1Income = p1Prov.income;
+    const p1Upkeep = p1Prov.upkeep;
+
+    // p1 ends turn → p2 starts (income processed for p2) → p2 can't act → auto-skip to p1
+    endTurn(gs);
+
+    // p2 was skipped, so it's p1's turn again
+    expect(gs.currentTurnPlayerId).toBe('p1');
+
+    // p1's income should have been processed during the skip-to
+    const p1ProvAfter = gs.provinces.find((p) => p.owner === 'p1')!;
+    expect(p1ProvAfter.gold).toBe(p1GoldBefore + p1Income - p1Upkeep);
+  });
+
   it('eliminates player who loses all territory via capture', () => {
     const gs = createTestGameState('elim-test');
 

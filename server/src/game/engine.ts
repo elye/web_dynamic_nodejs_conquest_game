@@ -700,6 +700,38 @@ export function endTurn(gameState: GameState): GameState {
         }
       }
 
+      // Process income/upkeep for the skipped-to player
+      recalculateAllProvinces(gameState);
+      for (const player of gameState.players) {
+        player.provinces = gameState.provinces
+          .filter((p) => p.owner === player.id)
+          .map((p) => p.id);
+      }
+
+      const skippedPlayerProvinces = gameState.provinces.filter(
+        (p) => p.owner === skipPlayer.id,
+      );
+
+      for (const province of skippedPlayerProvinces) {
+        province.gold += province.income;
+        province.gold -= province.upkeep;
+
+        if (province.gold < 0) {
+          const hexLookup = buildHexLookup(gameState.hexes);
+          for (const coord of province.hexes) {
+            const hex = hexLookup.get(coordKey(coord.q, coord.r));
+            if (hex?.unit && hex.unit.owner === skipPlayer.id) {
+              hex.unit = null;
+              hex.deathMarker = 'starvation';
+            }
+          }
+          province.gold = 0;
+        }
+      }
+
+      checkEliminations(gameState);
+      checkWinCondition(gameState);
+
       skips++;
     }
   }

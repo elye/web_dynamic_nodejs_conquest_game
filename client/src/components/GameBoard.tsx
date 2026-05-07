@@ -152,7 +152,7 @@ export default function GameBoard({
       </div>
 
       {/* Map area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0 relative">
         {/* Turn & connection header */}
         <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center px-4 justify-between">
           <span className="text-sm text-gray-300">
@@ -170,7 +170,7 @@ export default function GameBoard({
           )}
         </div>
 
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-h-0 overflow-hidden">
           <HexGrid
             hexes={gameState.hexes}
             provinces={gameState.provinces}
@@ -181,10 +181,11 @@ export default function GameBoard({
             playerIds={playerIds}
             validTargets={validMoves}
           />
+        </div>
 
-          {/* Floating Action Panel */}
+          {/* Floating Action Panel — fixed to viewport bottom center */}
           {actionsAvailable && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
               <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-2">
                 {/* Turn status */}
                 <span className={`text-xs font-semibold mr-2 ${isMyTurn ? 'text-green-400' : 'text-red-400'}`}>
@@ -290,7 +291,6 @@ export default function GameBoard({
               </div>
             </div>
           )}
-        </div>
       </div>
     </div>
   );

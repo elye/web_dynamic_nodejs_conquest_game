@@ -113,7 +113,13 @@ export default function HexGrid({
     const { width, height } = canvas;
     const cam = cameraRef.current;
 
+    // Reset transform to identity and clear full canvas in device-pixel space
+    // to prevent rendering artifacts when panning/zooming
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, width, height);
+
+    // Re-apply DPR scaling, then camera transform
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     ctx.save();
     ctx.translate(cam.x, cam.y);
     ctx.scale(cam.zoom, cam.zoom);
