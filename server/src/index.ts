@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { config } from './config.js';
 import routes from './routes/index.js';
 import { setupWebSocket } from './ws/index.js';
@@ -39,6 +41,16 @@ app.get('/api/active-game', authMiddleware, (req, res) => {
 });
 
 app.use('/api', routes);
+
+// Serve client static files in production
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientDistPath = path.resolve(__dirname, '../../client/dist');
+app.use(express.static(clientDistPath));
+
+// SPA fallback: serve index.html for all non-API routes
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(clientDistPath, 'index.html'));
+});
 
 const server = createServer(app);
 
