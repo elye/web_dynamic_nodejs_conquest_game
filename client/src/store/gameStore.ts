@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { GameState, HexCoord, Hex } from '@conquest/shared';
-import { TerrainType } from '@conquest/shared';
+import { TerrainType, StructureType, STRUCTURE_STRENGTH } from '@conquest/shared';
 import { getHexNeighbors } from '../utils/hexUtils';
 
 interface ChatMsg {
@@ -27,11 +27,32 @@ interface GameStore {
   reset: () => void;
 }
 
+function getHexDefense(target: Hex, hexMap: Map<string, Hex>): number {
+  let defense = target.unit ? target.unit.strength : 0;
+  if (!target.owner) return defense;
+  // Structure on the hex itself
+  if (target.structure && target.owner === target.structure.owner) {
+    defense += STRUCTURE_STRENGTH[target.structure.type as StructureType] ?? 0;
+  }
+  // Adjacent tower bonuses
+  const neighbors = getHexNeighbors(target.coord.q, target.coord.r);
+  for (const nc of neighbors) {
+    const nh = hexMap.get(`${nc.q},${nc.r}`);
+    if (nh?.structure && nh.owner === target.owner) {
+      defense += STRUCTURE_STRENGTH[nh.structure.type as StructureType] ?? 0;
+    }
+  }
+  return defense;
+}
+
 function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string): HexCoord[] {
   const hexMap = new Map<string, Hex>();
   for (const h of hexes) {
     hexMap.set(`${h.coord.q},${h.coord.r}`, h);
   }
+
+  const sourceHex = hexMap.get(`${hex.q},${hex.r}`);
+  const unitStrength = sourceHex?.unit?.strength ?? 0;
 
   const neighbors = getHexNeighbors(hex.q, hex.r);
   return neighbors.filter((n) => {
@@ -39,6 +60,11 @@ function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string)
     if (!target || target.terrain === TerrainType.WATER) return false;
     // Can't move onto own structure (capital, tower)
     if (target.owner === currentPlayerId && target.structure) return false;
+    // Can't attack/capture if unit isn't strong enough
+    if (target.owner !== null && target.owner !== currentPlayerId) {
+      const defense = getHexDefense(target, hexMap);
+      if (unitStrength <= defense) return false;
+    }
     return true;
   });
 }

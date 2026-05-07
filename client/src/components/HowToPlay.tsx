@@ -52,7 +52,7 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
               <li>You need a capital to buy units in that province.</li>
               <li>Capturing an enemy capital transfers its gold to your richest province at end of turn.</li>
               <li>If territory splits, the fragment with the capital keeps all gold. The new fragment gets a new capital with 0 gold.</li>
-              <li>Capitals provide +2 defense (like a Strong Tower).</li>
+              <li>Capitals have no defense bonus — protect them with towers and units!</li>
             </ul>
           </section>
 
@@ -102,7 +102,7 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
             <ul className="space-y-1">
               <li>🏰 <strong>Tower</strong> (15g) — +1 defense to hex and neighbors</li>
               <li>🏯 <strong>Strong Tower</strong> (35g) — +2 defense</li>
-              <li>🏛️ <strong>Capital</strong> (auto) — +2 defense, required for buying units</li>
+              <li>🏛️ <strong>Capital</strong> (auto) — no defense, required for buying units</li>
             </ul>
           </section>
 

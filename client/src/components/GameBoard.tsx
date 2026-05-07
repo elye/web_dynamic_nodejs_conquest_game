@@ -123,7 +123,9 @@ export default function GameBoard({
                 )}
                 <div className="mt-1 text-xs text-slate-700 space-y-0.5">
                   <div>Territory: {territoryCount}</div>
-                  <div>Gold: {totalGold}</div>
+                  {player.id === currentPlayerId && (
+                    <div>Gold: {totalGold}</div>
+                  )}
                   <div className="flex items-center gap-1">
                     <span
                       className={`w-2 h-2 rounded-full ${player.isConnected ? 'bg-green-600' : 'bg-red-600'}`}

@@ -1,5 +1,5 @@
 import type { Hex, HexCoord, Province, GameState } from '@conquest/shared';
-import { StructureType } from '@conquest/shared';
+import { StructureType, TerrainType } from '@conquest/shared';
 import { randomUUID } from 'node:crypto';
 import { coordKey, getHexNeighbors } from './mapGenerator.js';
 
@@ -187,38 +187,79 @@ export function recalculateAllProvinces(gameState: GameState): void {
         province.gold = 0;
         // Auto-place a capital if 2+ hexes
         if (province.hexes.length >= 2) {
-          // Find an empty hex (no unit, no structure)
-          let placed = false;
+          // Score a hex by how many of its neighbors are water or off-map (border)
+          const waterScore = (coord: HexCoord): number => {
+            let score = 0;
+            for (const n of getHexNeighbors(coord.q, coord.r)) {
+              const nHex = lookup.get(coordKey(n.q, n.r));
+              if (!nHex || nHex.terrain === TerrainType.WATER) {
+                score++;
+              }
+            }
+            return score;
+          };
+
+          // Collect empty hex candidates (no unit, no structure)
+          const emptyCandidates: HexCoord[] = [];
           for (const coord of province.hexes) {
             const hex = lookup.get(coordKey(coord.q, coord.r));
             if (hex && !hex.unit && !hex.structure) {
+              emptyCandidates.push(coord);
+            }
+          }
+
+          let placed = false;
+          if (emptyCandidates.length > 0) {
+            // Pick the candidate with the highest water score
+            let bestCoord = emptyCandidates[0];
+            let bestScore = waterScore(bestCoord);
+            for (let i = 1; i < emptyCandidates.length; i++) {
+              const s = waterScore(emptyCandidates[i]);
+              if (s > bestScore) {
+                bestScore = s;
+                bestCoord = emptyCandidates[i];
+              }
+            }
+            const hex = lookup.get(coordKey(bestCoord.q, bestCoord.r))!;
+            hex.hasTree = false;
+            hex.structure = {
+              id: randomUUID(),
+              type: StructureType.CAPITAL,
+              owner: playerId,
+              hex: bestCoord,
+              strength: 2,
+            };
+            placed = true;
+          }
+
+          // If no completely empty hex, place on a hex with a unit but no structure
+          if (!placed) {
+            const unitCandidates: HexCoord[] = [];
+            for (const coord of province.hexes) {
+              const hex = lookup.get(coordKey(coord.q, coord.r));
+              if (hex && !hex.structure) {
+                unitCandidates.push(coord);
+              }
+            }
+            if (unitCandidates.length > 0) {
+              let bestCoord = unitCandidates[0];
+              let bestScore = waterScore(bestCoord);
+              for (let i = 1; i < unitCandidates.length; i++) {
+                const s = waterScore(unitCandidates[i]);
+                if (s > bestScore) {
+                  bestScore = s;
+                  bestCoord = unitCandidates[i];
+                }
+              }
+              const hex = lookup.get(coordKey(bestCoord.q, bestCoord.r))!;
               hex.hasTree = false;
               hex.structure = {
                 id: randomUUID(),
                 type: StructureType.CAPITAL,
                 owner: playerId,
-                hex: coord,
+                hex: bestCoord,
                 strength: 2,
               };
-              placed = true;
-              break;
-            }
-          }
-          // If no completely empty hex, place on a hex with a unit but no structure
-          if (!placed) {
-            for (const coord of province.hexes) {
-              const hex = lookup.get(coordKey(coord.q, coord.r));
-              if (hex && !hex.structure) {
-                hex.hasTree = false;
-                hex.structure = {
-                  id: randomUUID(),
-                  type: StructureType.CAPITAL,
-                  owner: playerId,
-                  hex: coord,
-                  strength: 2,
-                };
-                break;
-              }
             }
           }
         }

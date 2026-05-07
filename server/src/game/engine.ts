@@ -103,9 +103,22 @@ function canPlayerAct(gameState: GameState, playerId: string): boolean {
 function checkEliminations(gameState: GameState): void {
   for (const player of gameState.players) {
     if (player.isEliminated) continue;
-    const hasHexes = gameState.hexes.some((h) => h.owner === player.id);
-    if (!hasHexes) {
+    const playerHexes = gameState.hexes.filter((h) => h.owner === player.id);
+    if (playerHexes.length === 0) {
       player.isEliminated = true;
+      continue;
+    }
+    // Eliminate players who have hexes but no capital (e.g. only isolated single tiles)
+    const hasCapital = playerHexes.some(
+      (h) => h.structure?.type === StructureType.CAPITAL,
+    );
+    if (!hasCapital) {
+      player.isEliminated = true;
+      for (const hex of playerHexes) {
+        hex.owner = null;
+        hex.unit = null;
+        hex.structure = null;
+      }
     }
   }
   checkWinCondition(gameState);
@@ -204,29 +217,40 @@ export function startGame(gameId: string): GameState {
 
       // Place a capital on the hex that has the starting peasant
       if (province.hexes.length >= 2) {
-        const unitHex = hexes.find(
+        // Find all empty hexes in the province (no unit, no structure)
+        const emptyHexes = hexes.filter(
           (h) =>
-            h.unit?.owner === player.id &&
+            !h.unit &&
+            !h.structure &&
+            h.owner === player.id &&
             province.hexes.some((ph) => ph.q === h.coord.q && ph.r === h.coord.r),
         );
-        if (unitHex) {
-          // Place capital on an empty hex in the province (not the unit hex)
-          const emptyHex = hexes.find(
-            (h) =>
-              !h.unit &&
-              !h.structure &&
-              h.owner === player.id &&
-              province.hexes.some((ph) => ph.q === h.coord.q && ph.r === h.coord.r),
-          );
-          if (emptyHex) {
-            emptyHex.structure = {
-              id: randomUUID(),
-              type: StructureType.CAPITAL,
-              owner: player.id,
-              hex: emptyHex.coord,
-              strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
-            };
+
+        if (emptyHexes.length > 0) {
+          // Score by water adjacency — prefer hexes near water/border
+          const lookup = buildHexLookup(hexes);
+          let bestHex = emptyHexes[0];
+          let bestScore = -1;
+          for (const candidate of emptyHexes) {
+            const neighbors = getHexNeighbors(candidate.coord.q, candidate.coord.r);
+            let waterCount = 0;
+            for (const nc of neighbors) {
+              const nh = lookup.get(coordKey(nc.q, nc.r));
+              if (!nh || nh.terrain === TerrainType.WATER) waterCount++;
+            }
+            if (waterCount > bestScore) {
+              bestScore = waterCount;
+              bestHex = candidate;
+            }
           }
+
+          bestHex.structure = {
+            id: randomUUID(),
+            type: StructureType.CAPITAL,
+            owner: player.id,
+            hex: bestHex.coord,
+            strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          };
         }
       }
     }
@@ -339,17 +363,14 @@ export function moveUnit(
     if (targetHex.unit) {
       const result = resolveCombat(unit, targetHex, gameState.hexes);
       if (!result.success) {
-        // Attack failed — unit stays, mark as moved
-        sourceHex.unit.hasMoved = true;
-        return gameState;
+        throw new Error('Unit is not strong enough to attack this target');
       }
       // Defender destroyed
       targetHex.unit = null;
     } else {
       // No defender but hex is enemy — check if we can capture (tower defense)
       if (!canCapture(unit, targetHex, gameState.hexes)) {
-        sourceHex.unit.hasMoved = true;
-        return gameState;
+        throw new Error('Unit is not strong enough to capture this hex');
       }
     }
 

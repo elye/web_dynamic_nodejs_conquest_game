@@ -92,6 +92,8 @@ function getValidMoves(gameState: GameState, playerId: string): UnitMove[] {
 
       // Check if we can actually move there
       if (targetHex.owner === playerId) {
+        // Can't move onto own structure (capital, tower)
+        if (targetHex.structure) continue;
         // Can move to own territory if no unit or mergeable
         if (!targetHex.unit) {
           moves.push({ unitId: unit.id, from: sourceHex.coord, to: nc });

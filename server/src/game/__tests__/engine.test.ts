@@ -14,6 +14,7 @@ import {
 import { gameStore } from '../../store/gameStore.js';
 import { recalculateAllProvinces } from '../provinces.js';
 import { getHexDefense } from '../combat.js';
+import { coordKey, getHexNeighbors } from '../mapGenerator.js';
 import type { GameState, Hex, Unit, Province, GameRoom } from '@conquest/shared';
 import {
   TerrainType,
@@ -242,6 +243,48 @@ describe('startGame', () => {
     createTestRoom('game-start-test', ['p1']);
     expect(() => startGame('game-start-test')).toThrow('At least 2 players');
   });
+
+  it('places capitals on hexes with most water adjacency', () => {
+    createTestRoom('game-start-test', ['p1', 'p2']);
+    const state = startGame('game-start-test');
+
+    const lookup = new Map<string, Hex>();
+    for (const hex of state.hexes) {
+      lookup.set(coordKey(hex.coord.q, hex.coord.r), hex);
+    }
+
+    function waterScore(hex: Hex): number {
+      const neighbors = getHexNeighbors(hex.coord.q, hex.coord.r);
+      let count = 0;
+      for (const nc of neighbors) {
+        const nh = lookup.get(coordKey(nc.q, nc.r));
+        if (!nh || nh.terrain === TerrainType.WATER) count++;
+      }
+      return count;
+    }
+
+    // For each province with a capital, verify the capital hex has the maximum
+    // water score among all empty hexes (no unit, no structure except the capital itself)
+    for (const province of state.provinces) {
+      const capitalHex = state.hexes.find(
+        (h) =>
+          h.structure?.type === StructureType.CAPITAL &&
+          province.hexes.some((ph) => ph.q === h.coord.q && ph.r === h.coord.r),
+      );
+      if (!capitalHex) continue;
+
+      const capitalScore = waterScore(capitalHex);
+
+      // Check that no other hex in the province (without unit/structure) has higher water score
+      for (const coord of province.hexes) {
+        const hex = lookup.get(coordKey(coord.q, coord.r));
+        if (!hex || hex === capitalHex) continue;
+        // Only compare against hexes that were candidates (no unit, no structure other than capital)
+        if (hex.unit || hex.structure) continue;
+        expect(waterScore(hex)).toBeLessThanOrEqual(capitalScore);
+      }
+    }
+  });
 });
 
 // ── moveUnit ──
@@ -329,14 +372,11 @@ describe('moveUnit', () => {
     const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
     midHex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'u1-weak');
 
-    const result = moveUnit(gs, 'p1', 'u1-weak', { q: 2, r: 0 });
-    // Attack fails — unit stays at source but is marked as moved
-    const targetHex = result.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0);
-    expect(targetHex!.owner).toBe('p2');
-    expect(targetHex!.unit!.owner).toBe('p2');
-    // Unit should still be at source and marked as moved
-    const sourceHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
-    expect(sourceHex!.unit!.hasMoved).toBe(true);
+    // Attack should throw — unit's turn is NOT consumed
+    expect(() => moveUnit(gs, 'p1', 'u1-weak', { q: 2, r: 0 })).toThrow('not strong enough');
+    // Unit should still be at source and NOT marked as moved
+    const sourceHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
+    expect(sourceHex!.unit!.hasMoved).toBe(false);
   });
 
   it('merges friendly units (Peasant+Peasant=Spearman)', () => {
@@ -1384,9 +1424,11 @@ describe('auto-skip, elimination, and win condition', () => {
 
     const hexes: Hex[] = [
       makeHex(0, 0, 'p1', { unit: p1Unit }),
-      makeHex(1, 0, 'p2'),
-      makeHex(2, 0, 'p3'),
       makeHex(0, 1, 'p1'),
+      makeHex(1, 0, 'p2'),
+      makeHex(1, -1, 'p2'), // adjacent to (1,0) so p2 gets a capital
+      makeHex(2, 0, 'p3'),
+      makeHex(3, 0, 'p3'), // adjacent to (2,0) so p3 gets a capital
       makeHex(1, 1, 'p4', { unit: p4Unit }),
       makeHex(2, 1, 'p4'),
     ];
@@ -1404,8 +1446,8 @@ describe('auto-skip, elimination, and win condition', () => {
       hexes,
       provinces: [
         { id: 'prov-p1', hexes: [{ q: 0, r: 0 }, { q: 0, r: 1 }], owner: 'p1', gold: 50, income: 2, upkeep: UNIT_UPKEEP[UnitType.PEASANT] },
-        { id: 'prov-p2', hexes: [{ q: 1, r: 0 }], owner: 'p2', gold: 0, income: 1, upkeep: 0 },
-        { id: 'prov-p3', hexes: [{ q: 2, r: 0 }], owner: 'p3', gold: 0, income: 1, upkeep: 0 },
+        { id: 'prov-p2', hexes: [{ q: 1, r: 0 }, { q: 1, r: -1 }], owner: 'p2', gold: 0, income: 2, upkeep: 0 },
+        { id: 'prov-p3', hexes: [{ q: 2, r: 0 }, { q: 3, r: 0 }], owner: 'p3', gold: 0, income: 2, upkeep: 0 },
         { id: 'prov-p4', hexes: [{ q: 1, r: 1 }, { q: 2, r: 1 }], owner: 'p4', gold: 50, income: 2, upkeep: UNIT_UPKEEP[UnitType.PEASANT] },
       ],
       currentTurnPlayerId: 'p1',
@@ -2044,5 +2086,124 @@ describe('retireUnit', () => {
       (h) => h.coord.q === targetCoord!.q && h.coord.r === targetCoord!.r,
     )!;
     expect(retiredHex.unit).toBeNull();
+  });
+});
+
+// ── no-capital elimination ──
+
+describe('no-capital elimination', () => {
+  it('eliminates a player who has hexes but no capital', () => {
+    const gs = createTestGameState('no-cap-elim');
+
+    // Reduce p2 to isolated single hexes (no province gets a capital)
+    // Remove p2's capital structure
+    const capHex = gs.hexes.find(
+      (h) => h.coord.q === 2 && h.coord.r === 1,
+    )!;
+    capHex.structure = null;
+
+    // Make p2's hexes non-adjacent so recalculate won't form a multi-hex province
+    // Move hex (3,0) ownership away so p2 has only (2,0) and (2,1) which are adjacent
+    // Instead, remove adjacency: clear all p2 hexes except one isolated one
+    for (const hex of gs.hexes) {
+      if (hex.owner === 'p2') {
+        hex.owner = null;
+        hex.unit = null;
+        hex.structure = null;
+      }
+    }
+    // Give p2 two isolated hexes with no capital
+    const isoHex1 = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 1)!;
+    isoHex1.owner = 'p2';
+    const isoHex2 = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 1)!;
+    isoHex2.owner = 'p2';
+
+    // Recalculate provinces (single-tile provinces won't get capitals)
+    recalculateAllProvinces(gs);
+
+    // Verify p2 has hexes but no capital
+    const p2Hexes = gs.hexes.filter((h) => h.owner === 'p2');
+    expect(p2Hexes.length).toBeGreaterThan(0);
+    expect(p2Hexes.some((h) => h.structure?.type === StructureType.CAPITAL)).toBe(false);
+
+    // End p1's turn — checkEliminations should eliminate p2
+    endTurn(gs);
+
+    const p2 = gs.players.find((p) => p.id === 'p2')!;
+    expect(p2.isEliminated).toBe(true);
+
+    // All p2 hexes should now be neutral
+    const remainingP2Hexes = gs.hexes.filter((h) => h.owner === 'p2');
+    expect(remainingP2Hexes).toHaveLength(0);
+  });
+
+  it('does not eliminate a player who has a capital', () => {
+    const gs = createTestGameState('has-cap');
+
+    // p2 has a capital by default — should not be eliminated
+    endTurn(gs);
+
+    const p2 = gs.players.find((p) => p.id === 'p2')!;
+    expect(p2.isEliminated).toBe(false);
+  });
+
+  it('clears units and structures from eliminated no-capital player hexes', () => {
+    const gs = createTestGameState('no-cap-clear');
+
+    // Strip p2's capital but leave a unit and a tower
+    for (const hex of gs.hexes) {
+      if (hex.owner === 'p2') {
+        hex.owner = null;
+        hex.unit = null;
+        hex.structure = null;
+      }
+    }
+
+    // Give p2 a single isolated hex with a unit and tower (no capital)
+    const isoHex = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 1)!;
+    isoHex.owner = 'p2';
+    isoHex.unit = makeUnit('p2', 0, 1, UnitType.PEASANT, 'u-iso');
+    isoHex.structure = {
+      id: 'tower-p2',
+      type: StructureType.TOWER,
+      owner: 'p2',
+      hex: { q: 0, r: 1 },
+      strength: STRUCTURE_STRENGTH[StructureType.TOWER],
+    };
+
+    recalculateAllProvinces(gs);
+
+    endTurn(gs);
+
+    const p2 = gs.players.find((p) => p.id === 'p2')!;
+    expect(p2.isEliminated).toBe(true);
+
+    // Hex should be neutral with no unit or structure
+    expect(isoHex.owner).toBeNull();
+    expect(isoHex.unit).toBeNull();
+    expect(isoHex.structure).toBeNull();
+  });
+
+  it('triggers win condition when no-capital elimination leaves one player', () => {
+    const gs = createTestGameState('no-cap-win');
+
+    // Remove all p2 hexes and give them a single isolated hex (no capital)
+    for (const hex of gs.hexes) {
+      if (hex.owner === 'p2') {
+        hex.owner = null;
+        hex.unit = null;
+        hex.structure = null;
+      }
+    }
+    const isoHex = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 1)!;
+    isoHex.owner = 'p2';
+
+    recalculateAllProvinces(gs);
+
+    endTurn(gs);
+
+    expect(gs.players.find((p) => p.id === 'p2')!.isEliminated).toBe(true);
+    expect(gs.status).toBe(GameStatus.FINISHED);
+    expect(gs.winnerId).toBe('p1');
   });
 });

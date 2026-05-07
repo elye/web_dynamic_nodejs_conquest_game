@@ -402,4 +402,64 @@ describe('recalculateAllProvinces', () => {
     // Capital should be removed from single-hex province
     expect(hexes[0].structure).toBeNull();
   });
+
+  it('auto-places capital near water hexes when available', () => {
+    // Province with no capital: hex (3,0) is inland, hex (4,0) borders water at (5,0)
+    // Capital should prefer (4,0) because it has a water neighbor
+    const hexes: Hex[] = [
+      // Province A: has capital, unrelated
+      makeHex(0, 0, 'p1', {
+        structure: {
+          id: 'cap-a',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 0, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
+      makeHex(1, 0, 'p1'),
+      // Gap
+      makeHex(2, 0, null),
+      // Province B: no capital, 3 hexes, one borders water
+      makeHex(3, 0, 'p1'),
+      makeHex(4, 0, 'p1'),
+      makeHex(5, 0, 'p1'),
+      // Water hex adjacent to (5,0)
+      makeHex(6, 0, null, { terrain: TerrainType.WATER }),
+    ];
+    const gameState = {
+      hexes,
+      provinces: [
+        {
+          id: 'old-prov-a',
+          hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }],
+          owner: 'p1',
+          gold: 10,
+          income: 2,
+          upkeep: 0,
+        },
+        {
+          id: 'old-prov-b',
+          hexes: [{ q: 3, r: 0 }, { q: 4, r: 0 }, { q: 5, r: 0 }],
+          owner: 'p1',
+          gold: 0,
+          income: 3,
+          upkeep: 0,
+        },
+      ],
+      players: [{ id: 'p1', provinces: ['old-prov-a', 'old-prov-b'] }],
+    } as unknown as GameState;
+
+    recalculateAllProvinces(gameState);
+
+    // Province B should get a new capital on (5,0) since it's adjacent to water at (6,0)
+    const capitalHex = hexes.find(
+      (h) =>
+        [3, 4, 5].includes(h.coord.q) &&
+        h.coord.r === 0 &&
+        h.structure?.type === StructureType.CAPITAL,
+    );
+    expect(capitalHex).toBeDefined();
+    expect(capitalHex!.coord.q).toBe(5);
+  });
 });
