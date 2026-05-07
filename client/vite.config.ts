@@ -13,15 +13,6 @@ export default defineConfig({
       '/ws': {
         target: 'ws://localhost:3001',
         ws: true,
-        on: {
-          proxyReqWs: (_proxyReq: unknown, _req: unknown, socket: import('net').Socket) => {
-            socket.on('error', () => {});
-          },
-          open: (_proxySocket: import('net').Socket) => {
-            _proxySocket.on('error', () => {});
-          },
-          error: () => {},
-        },
       },
     },
   },

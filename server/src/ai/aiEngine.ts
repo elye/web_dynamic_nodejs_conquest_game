@@ -20,6 +20,7 @@ import {
   moveUnit,
   buyUnit,
   buildStructure,
+  retireUnit,
   endTurn,
 } from '../game/engine.js';
 import { coordKey, getHexNeighbors, hexDistance } from '../game/mapGenerator.js';
@@ -91,6 +92,8 @@ function getValidMoves(gameState: GameState, playerId: string): UnitMove[] {
 
       // Check if we can actually move there
       if (targetHex.owner === playerId) {
+        // Can't move onto own structure (capital, tower)
+        if (targetHex.structure) continue;
         // Can move to own territory if no unit or mergeable
         if (!targetHex.unit) {
           moves.push({ unitId: unit.id, from: sourceHex.coord, to: nc });
@@ -226,8 +229,26 @@ function getEmptyOwnedHexes(gameState: GameState, playerId: string): Hex[] {
     (h) =>
       h.owner === playerId &&
       !h.unit &&
-      !h.structure &&
+      (!h.structure || h.structure.type === StructureType.CAPITAL) &&
       h.terrain !== TerrainType.WATER,
+  );
+}
+
+function findCapitalHexes(gameState: GameState, playerId: string): Hex[] {
+  return gameState.hexes.filter(
+    (h) =>
+      h.structure?.type === StructureType.CAPITAL &&
+      h.structure.owner === playerId,
+  );
+}
+
+function findEnemyCapitalHexes(gameState: GameState, playerId: string): Hex[] {
+  return gameState.hexes.filter(
+    (h) =>
+      h.structure?.type === StructureType.CAPITAL &&
+      h.structure.owner !== playerId &&
+      h.owner !== playerId &&
+      h.owner !== null,
   );
 }
 
@@ -349,6 +370,28 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
 
   // Build towers on border hexes
   const borderHexes = getBorderHexes(gameState, playerId);
+
+  // Retire units in provinces about to go bankrupt (upkeep > income + gold)
+  for (const province of provinces) {
+    while (province.upkeep > province.income + province.gold) {
+      // Find the weakest unit in this province
+      const provinceUnits = province.hexes
+        .map((c) => gameState.hexes.find((h) => h.coord.q === c.q && h.coord.r === c.r))
+        .filter((h): h is Hex => !!h && !!h.unit && h.unit.owner === playerId)
+        .sort((a, b) => UNIT_STRENGTH[a.unit!.type] - UNIT_STRENGTH[b.unit!.type]);
+
+      if (provinceUnits.length === 0) break;
+
+      try {
+        retireUnit(gameState, playerId, provinceUnits[0].unit!.id);
+        broadcastDelta(gameState);
+        await randomDelay();
+      } catch {
+        break;
+      }
+    }
+  }
+
   for (const hex of borderHexes) {
     if (hex.unit || hex.structure) continue;
 
@@ -372,13 +415,25 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
   // Move units toward nearest unowned/enemy land
   const moves = getValidMoves(gameState, playerId);
 
-  // Prioritize moves toward non-owned hexes
+  // Prioritize moves toward non-owned hexes, and also prioritize enemy capitals
+  const enemyCapitals = findEnemyCapitalHexes(gameState, playerId);
   const scored = moves.map((move) => {
     const targetHex = lookup.get(coordKey(move.to.q, move.to.r));
     let score = 0;
     if (targetHex) {
       if (targetHex.owner === null) score = 5; // Neutral expansion
-      else if (targetHex.owner !== playerId) score = 8; // Enemy capture
+      else if (targetHex.owner !== playerId) {
+        score = 8; // Enemy capture
+        // Bonus for attacking enemy capitals
+        if (targetHex.structure?.type === StructureType.CAPITAL) {
+          score += 10;
+          // Extra bonus proportional to province gold (every 5 gold = +1)
+          const province = gameState.provinces.find((p) =>
+            p.hexes.some((h) => h.q === move.to.q && h.r === move.to.r)
+          );
+          if (province) score += Math.floor(province.gold / 5);
+        }
+      }
       else score = 1; // Own territory repositioning
     }
     return { move, score };
@@ -408,6 +463,39 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
 
   // 1. Save provinces at risk of bankruptcy — don't buy if going bankrupt
   const provinces = gameState.provinces.filter((p) => p.owner === playerId);
+
+  // Retire units in provinces about to go bankrupt — prefer isolated/non-border units
+  for (const province of provinces) {
+    while (province.upkeep > province.income + province.gold) {
+      const provinceUnits = province.hexes
+        .map((c) => gameState.hexes.find((h) => h.coord.q === c.q && h.coord.r === c.r))
+        .filter((h): h is Hex => !!h && !!h.unit && h.unit.owner === playerId);
+
+      if (provinceUnits.length === 0) break;
+
+      // Score units: prefer retiring isolated/non-border units first
+      const scored = provinceUnits.map((h) => {
+        const neighbors = getHexNeighbors(h.coord.q, h.coord.r);
+        const nearBorder = neighbors.some((nc) => {
+          const n = lookup.get(coordKey(nc.q, nc.r));
+          return n && n.terrain !== TerrainType.WATER && n.owner !== playerId && n.owner !== null;
+        });
+        // Lower score = retire first: weak units far from borders
+        let score = UNIT_STRENGTH[h.unit!.type] * 10;
+        if (nearBorder) score += 50; // Keep border units
+        return { hex: h, score };
+      });
+      scored.sort((a, b) => a.score - b.score);
+
+      try {
+        retireUnit(gameState, playerId, scored[0].hex.unit!.id);
+        broadcastDelta(gameState);
+        await randomDelay();
+      } catch {
+        break;
+      }
+    }
+  }
 
   // 2. Buy units strategically
   for (const province of provinces) {
@@ -501,6 +589,7 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
   // 3. Move units strategically
   const moves = getValidMoves(gameState, playerId);
   const weakEnemyHexes = findWeakEnemyHexes(gameState, playerId);
+  const enemyCapitals = findEnemyCapitalHexes(gameState, playerId);
 
   const scored = moves.map((move) => {
     const targetHex = lookup.get(coordKey(move.to.q, move.to.r));
@@ -519,6 +608,15 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
         score = 15 + value;
         // Bonus for weak enemies
         if (defense === 0) score += 5;
+        // HIGH bonus for capturing enemy capitals
+        if (targetHex.structure?.type === StructureType.CAPITAL) {
+          score += 25;
+          // Extra bonus proportional to province gold (every 3 gold = +1)
+          const province = gameState.provinces.find((p) =>
+            p.hexes.some((h) => h.q === move.to.q && h.r === move.to.r)
+          );
+          if (province) score += Math.floor(province.gold / 3);
+        }
         // Bonus for province splitting
         const enemyOwner = targetHex.owner;
         const enemyNeighbors = getHexNeighbors(move.to.q, move.to.r).filter((nc) => {

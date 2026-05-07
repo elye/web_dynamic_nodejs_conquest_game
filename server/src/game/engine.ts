@@ -87,17 +87,38 @@ function canPlayerAct(gameState: GameState, playerId: string): boolean {
   if (hasUnits) return true;
 
   const cheapestCost = UNIT_COST[UnitType.PEASANT];
+  const hexLookup = buildHexLookup(gameState.hexes);
   return gameState.provinces
     .filter((p) => p.owner === playerId)
-    .some((p) => p.gold >= cheapestCost);
+    .some((p) => {
+      if (p.gold < cheapestCost) return false;
+      // Province needs a capital to buy units
+      return p.hexes.some((c) => {
+        const h = hexLookup.get(coordKey(c.q, c.r));
+        return h?.structure?.type === StructureType.CAPITAL && h.structure.owner === playerId;
+      });
+    });
 }
 
 function checkEliminations(gameState: GameState): void {
   for (const player of gameState.players) {
     if (player.isEliminated) continue;
-    const hasHexes = gameState.hexes.some((h) => h.owner === player.id);
-    if (!hasHexes) {
+    const playerHexes = gameState.hexes.filter((h) => h.owner === player.id);
+    if (playerHexes.length === 0) {
       player.isEliminated = true;
+      continue;
+    }
+    // Eliminate players who have hexes but no capital (e.g. only isolated single tiles)
+    const hasCapital = playerHexes.some(
+      (h) => h.structure?.type === StructureType.CAPITAL,
+    );
+    if (!hasCapital) {
+      player.isEliminated = true;
+      for (const hex of playerHexes) {
+        hex.owner = null;
+        hex.unit = null;
+        hex.structure = null;
+      }
     }
   }
   checkWinCondition(gameState);
@@ -113,6 +134,15 @@ const redoStacks = new Map<string, GameState[]>();
 
 export function getGameState(gameId: string): GameState | undefined {
   return gameStates.get(gameId);
+}
+
+export function findActiveGameByPlayerId(playerId: string): { gameId: string; status: GameStatus } | null {
+  for (const [gameId, state] of gameStates) {
+    if (state.status !== GameStatus.IN_PROGRESS) continue;
+    const player = state.players.find((p) => p.id === playerId && !p.isEliminated);
+    if (player) return { gameId, status: state.status };
+  }
+  return null;
 }
 
 export function startGame(gameId: string): GameState {
@@ -176,6 +206,7 @@ export function startGame(gameId: string): GameState {
     history: [],
     winnerId: null,
     createdAt: Date.now(),
+    pendingGoldCaptures: {},
   };
 
   // Calculate initial provinces for each player
@@ -183,6 +214,45 @@ export function startGame(gameId: string): GameState {
     const playerProvinces = calculateProvinces(hexes, player.id);
     for (const province of playerProvinces) {
       province.gold = room.settings.startingGold ?? DEFAULT_GAME_SETTINGS.startingGold;
+
+      // Place a capital on the hex that has the starting peasant
+      if (province.hexes.length >= 2) {
+        // Find all empty hexes in the province (no unit, no structure)
+        const emptyHexes = hexes.filter(
+          (h) =>
+            !h.unit &&
+            !h.structure &&
+            h.owner === player.id &&
+            province.hexes.some((ph) => ph.q === h.coord.q && ph.r === h.coord.r),
+        );
+
+        if (emptyHexes.length > 0) {
+          // Score by water adjacency — prefer hexes near water/border
+          const lookup = buildHexLookup(hexes);
+          let bestHex = emptyHexes[0];
+          let bestScore = -1;
+          for (const candidate of emptyHexes) {
+            const neighbors = getHexNeighbors(candidate.coord.q, candidate.coord.r);
+            let waterCount = 0;
+            for (const nc of neighbors) {
+              const nh = lookup.get(coordKey(nc.q, nc.r));
+              if (!nh || nh.terrain === TerrainType.WATER) waterCount++;
+            }
+            if (waterCount > bestScore) {
+              bestScore = waterCount;
+              bestHex = candidate;
+            }
+          }
+
+          bestHex.structure = {
+            id: randomUUID(),
+            type: StructureType.CAPITAL,
+            owner: player.id,
+            hex: bestHex.coord,
+            strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          };
+        }
+      }
     }
     gameState.provinces.push(...playerProvinces);
     player.provinces = playerProvinces.map((p) => p.id);
@@ -263,6 +333,9 @@ export function moveUnit(
 
   // Handle friendly unit merge (move onto own unit)
   if (targetHex.owner === playerId && targetHex.unit && targetHex.unit.owner === playerId) {
+    if (targetHex.structure) {
+      throw new Error('Cannot move onto a hex with a structure');
+    }
     const mergeKey = `${targetHex.unit.type}+${unit.type}`;
     const mergedType = UNIT_MERGE_MAP[mergeKey];
     if (!mergedType) {
@@ -290,22 +363,34 @@ export function moveUnit(
     if (targetHex.unit) {
       const result = resolveCombat(unit, targetHex, gameState.hexes);
       if (!result.success) {
-        // Attack failed — unit stays, mark as moved
-        sourceHex.unit.hasMoved = true;
-        return gameState;
+        throw new Error('Unit is not strong enough to attack this target');
       }
       // Defender destroyed
       targetHex.unit = null;
     } else {
       // No defender but hex is enemy — check if we can capture (tower defense)
       if (!canCapture(unit, targetHex, gameState.hexes)) {
-        sourceHex.unit.hasMoved = true;
-        return gameState;
+        throw new Error('Unit is not strong enough to capture this hex');
       }
     }
 
     // Destroy enemy structure on capture
     if (targetHex.structure && targetHex.structure.owner !== playerId) {
+      // Capture gold from enemy capital
+      if (targetHex.structure.type === StructureType.CAPITAL) {
+        const enemyProvince = findProvinceForHex(
+          gameState.provinces,
+          toHex,
+          targetHex.structure.owner,
+        );
+        if (enemyProvince && enemyProvince.gold > 0) {
+          if (!gameState.pendingGoldCaptures) {
+            gameState.pendingGoldCaptures = {};
+          }
+          gameState.pendingGoldCaptures[playerId] =
+            (gameState.pendingGoldCaptures[playerId] ?? 0) + enemyProvince.gold;
+        }
+      }
       targetHex.structure = null;
     }
 
@@ -322,9 +407,6 @@ export function moveUnit(
         .filter((p) => p.owner === player.id)
         .map((p) => p.id);
     }
-
-    // Check if any player lost all territory
-    checkEliminations(gameState);
   }
 
   // Remove tree if present
@@ -333,6 +415,11 @@ export function moveUnit(
     if (targetHex.terrain === TerrainType.FOREST) {
       targetHex.terrain = TerrainType.GRASS;
     }
+  }
+
+  // Block moving onto own structure (capital, tower)
+  if (targetHex.owner === playerId && targetHex.structure) {
+    throw new Error('Cannot move onto a hex with a structure');
   }
 
   // Move unit
@@ -382,8 +469,23 @@ export function buyUnit(
     throw new Error('Hex is not owned by you');
   }
 
+  // Province must have a capital to buy units
+  const buyProvince = findProvinceForHex(gameState.provinces, hex, playerId);
+  if (!buyProvince) throw new Error('Hex does not belong to any province');
+  const hexLookup = buildHexLookup(gameState.hexes);
+  const provinceHasCapital = buyProvince.hexes.some((c) => {
+    const h = hexLookup.get(coordKey(c.q, c.r));
+    return h?.structure?.type === StructureType.CAPITAL && h.structure.owner === playerId;
+  });
+  if (!provinceHasCapital) {
+    throw new Error('Province has no capital — cannot buy units');
+  }
+
   // Handle merging: if hex has a unit, try to merge
   if (targetHex.unit) {
+    if (targetHex.unit.hasMoved) {
+      throw new Error('Unit has already acted this turn — cannot promote');
+    }
     const mergeKey = `${targetHex.unit.type}+${unitType}`;
     const mergedType = UNIT_MERGE_MAP[mergeKey];
     if (!mergedType) {
@@ -466,6 +568,11 @@ export function buildStructure(
     throw new Error('Not your turn');
   }
 
+  // Cannot manually build capitals
+  if (structureType === StructureType.CAPITAL) {
+    throw new Error('Capitals are placed automatically');
+  }
+
   // Snapshot before mutation for step-by-step undo
   const stack = turnSnapshotStacks.get(gameState.id) ?? [];
   stack.push(structuredClone(gameState));
@@ -507,42 +614,57 @@ export function buildStructure(
   return gameState;
 }
 
+export function retireUnit(
+  gameState: GameState,
+  playerId: string,
+  unitId: string,
+): GameState {
+  if (gameState.currentTurnPlayerId !== playerId) {
+    throw new Error('Not your turn');
+  }
+
+  // Snapshot before mutation for step-by-step undo
+  const stack = turnSnapshotStacks.get(gameState.id) ?? [];
+  stack.push(structuredClone(gameState));
+  turnSnapshotStacks.set(gameState.id, stack);
+
+  // Clear redo stack (new action invalidates redo history)
+  redoStacks.set(gameState.id, []);
+
+  // Find the unit
+  const unitHex = gameState.hexes.find((h) => h.unit?.id === unitId);
+  if (!unitHex?.unit) throw new Error('Unit not found');
+  if (unitHex.unit.owner !== playerId) {
+    throw new Error('Unit does not belong to you');
+  }
+
+  const unit = unitHex.unit;
+
+  // Find the province containing this hex
+  const province = findProvinceForHex(gameState.provinces, unitHex.coord, playerId);
+  if (!province) throw new Error('Unit hex does not belong to any province');
+
+  // Refund half purchase price (rounded down)
+  const refund = Math.floor(UNIT_COST[unit.type] / 2);
+  province.gold += refund;
+
+  // Remove unit from hex (hex keeps its owner)
+  unitHex.unit = null;
+
+  // Recalculate provinces (upkeep changes)
+  recalculateAllProvinces(gameState);
+  for (const player of gameState.players) {
+    player.provinces = gameState.provinces
+      .filter((p) => p.owner === player.id)
+      .map((p) => p.id);
+  }
+
+  return gameState;
+}
+
 export function endTurn(gameState: GameState): GameState {
   const currentPlayerId = gameState.currentTurnPlayerId;
   if (!currentPlayerId) throw new Error('No current player');
-
-  // Process income and upkeep for current player's provinces
-  const playerProvinces = gameState.provinces.filter(
-    (p) => p.owner === currentPlayerId,
-  );
-
-  // Clear old death markers
-  for (const hex of gameState.hexes) {
-    if (hex.deathMarker) {
-      delete hex.deathMarker;
-    }
-  }
-
-  for (const province of playerProvinces) {
-    province.gold += province.income;
-    province.gold -= province.upkeep;
-
-    if (province.gold < 0) {
-      // Kill all units in this province
-      const lookup = buildHexLookup(gameState.hexes);
-      for (const coord of province.hexes) {
-        const hex = lookup.get(coordKey(coord.q, coord.r));
-        if (hex?.unit && hex.unit.owner === currentPlayerId) {
-          hex.unit = null;
-          hex.deathMarker = 'starvation';
-        }
-      }
-      province.gold = 0;
-    }
-  }
-
-  // Check if any player lost all territory after starvation
-  checkEliminations(gameState);
 
   // Determine if this is the end of a full round
   const activePlayers = gameState.players.filter((p) => !p.isEliminated);
@@ -611,6 +733,56 @@ export function endTurn(gameState: GameState): GameState {
       .map((p) => p.id);
   }
 
+  // Apply pending gold captures for the player who just ended their turn
+  const pendingGold = gameState.pendingGoldCaptures?.[currentPlayerId];
+  if (pendingGold && pendingGold > 0) {
+    const capturerProvinces = gameState.provinces.filter(
+      (p) => p.owner === currentPlayerId,
+    );
+    if (capturerProvinces.length > 0) {
+      // Add to the richest province
+      const richest = capturerProvinces.reduce((best, p) =>
+        p.gold > best.gold ? p : best,
+      );
+      richest.gold += pendingGold;
+    }
+    delete gameState.pendingGoldCaptures[currentPlayerId];
+  }
+
+  // Process income and upkeep for the NEW current player's provinces
+  const newCurrentPlayerId = gameState.currentTurnPlayerId;
+  const playerProvinces = gameState.provinces.filter(
+    (p) => p.owner === newCurrentPlayerId,
+  );
+
+  // Clear old death markers
+  for (const hex of gameState.hexes) {
+    if (hex.deathMarker) {
+      delete hex.deathMarker;
+    }
+  }
+
+  for (const province of playerProvinces) {
+    province.gold += province.income;
+    province.gold -= province.upkeep;
+
+    if (province.gold < 0) {
+      // Kill all units in this province
+      const lookup = buildHexLookup(gameState.hexes);
+      for (const coord of province.hexes) {
+        const hex = lookup.get(coordKey(coord.q, coord.r));
+        if (hex?.unit && hex.unit.owner === newCurrentPlayerId) {
+          hex.unit = null;
+          hex.deathMarker = 'starvation';
+        }
+      }
+      province.gold = 0;
+    }
+  }
+
+  // Check if any player lost all territory after starvation
+  checkEliminations(gameState);
+
   // Check win condition
   checkWinCondition(gameState);
 
@@ -637,6 +809,38 @@ export function endTurn(gameState: GameState): GameState {
           hex.unit.hasMoved = false;
         }
       }
+
+      // Process income/upkeep for the skipped-to player
+      recalculateAllProvinces(gameState);
+      for (const player of gameState.players) {
+        player.provinces = gameState.provinces
+          .filter((p) => p.owner === player.id)
+          .map((p) => p.id);
+      }
+
+      const skippedPlayerProvinces = gameState.provinces.filter(
+        (p) => p.owner === skipPlayer.id,
+      );
+
+      for (const province of skippedPlayerProvinces) {
+        province.gold += province.income;
+        province.gold -= province.upkeep;
+
+        if (province.gold < 0) {
+          const hexLookup = buildHexLookup(gameState.hexes);
+          for (const coord of province.hexes) {
+            const hex = hexLookup.get(coordKey(coord.q, coord.r));
+            if (hex?.unit && hex.unit.owner === skipPlayer.id) {
+              hex.unit = null;
+              hex.deathMarker = 'starvation';
+            }
+          }
+          province.gold = 0;
+        }
+      }
+
+      checkEliminations(gameState);
+      checkWinCondition(gameState);
 
       skips++;
     }

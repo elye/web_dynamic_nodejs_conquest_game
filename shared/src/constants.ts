@@ -28,11 +28,13 @@ export const UNIT_COST: Record<UnitType, number> = {
 export const STRUCTURE_COST: Record<StructureType, number> = {
   [StructureType.TOWER]: 15,
   [StructureType.STRONG_TOWER]: 35,
+  [StructureType.CAPITAL]: 0,
 };
 
 export const STRUCTURE_STRENGTH: Record<StructureType, number> = {
   [StructureType.TOWER]: 1,
   [StructureType.STRONG_TOWER]: 2,
+  [StructureType.CAPITAL]: 0,
 };
 
 // ── Map ──

@@ -46,6 +46,7 @@ export interface Unit {
 export enum StructureType {
   TOWER = 'TOWER',
   STRONG_TOWER = 'STRONG_TOWER',
+  CAPITAL = 'CAPITAL',
 }
 
 export interface Structure {
@@ -129,6 +130,7 @@ export interface GameState {
   history: GameAction[];
   winnerId: string | null;
   createdAt: number;
+  pendingGoldCaptures: Record<string, number>;
 }
 
 // ── Game Room (Lobby) ──

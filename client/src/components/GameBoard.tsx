@@ -22,6 +22,7 @@ interface GameBoardProps {
   onUndo?: () => void;
   onRedo?: () => void;
   onSurrender?: () => void;
+  onRetireUnit?: (unitId: string) => void;
   isConnected?: boolean;
 }
 
@@ -39,6 +40,7 @@ export default function GameBoard({
   onUndo,
   onRedo,
   onSurrender,
+  onRetireUnit,
   isConnected,
 }: GameBoardProps) {
   const playerIds = gameState.players.map((p) => p.id);
@@ -53,6 +55,17 @@ export default function GameBoard({
   const gold = selectedProvince?.gold ?? 0;
   const hasHex = selectedHex !== null;
   const actionsAvailable = !!(onBuyUnit && onBuildStructure && onEndTurn && onSurrender);
+
+  // Check if selected hex has a unit owned by the current player (for retire)
+  const selectedHexData = selectedHex
+    ? gameState.hexes.find(
+        (h) => h.coord.q === selectedHex.q && h.coord.r === selectedHex.r,
+      )
+    : null;
+  const canRetire =
+    isMyTurn &&
+    selectedHexData?.unit != null &&
+    selectedHexData.unit.owner === currentPlayerId;
 
   const handleSurrender = () => {
     if (window.confirm('Are you sure you want to surrender?')) {
@@ -76,9 +89,6 @@ export default function GameBoard({
             const totalGold = gameState.provinces
               .filter((p) => p.owner === player.id)
               .reduce((sum, p) => sum + p.gold, 0);
-            const netIncome = gameState.provinces
-              .filter((p) => p.owner === player.id)
-              .reduce((sum, p) => sum + (p.income - p.upkeep), 0);
             const isCurrentTurn = player.id === gameState.currentTurnPlayerId;
             return (
               <div
@@ -113,10 +123,9 @@ export default function GameBoard({
                 )}
                 <div className="mt-1 text-xs text-slate-700 space-y-0.5">
                   <div>Territory: {territoryCount}</div>
-                  <div>Gold: {totalGold}</div>
-                  <div className={netIncome >= 0 ? 'text-green-800' : 'text-red-800'}>
-                    Net: {netIncome >= 0 ? '+' : ''}{netIncome}/turn
-                  </div>
+                  {player.id === currentPlayerId && (
+                    <div>Gold: {totalGold}</div>
+                  )}
                   <div className="flex items-center gap-1">
                     <span
                       className={`w-2 h-2 rounded-full ${player.isConnected ? 'bg-green-600' : 'bg-red-600'}`}
@@ -149,13 +158,16 @@ export default function GameBoard({
               >
                 Net: {selectedProvince.income - selectedProvince.upkeep}/turn
               </div>
+              <div>
+                Capital: {hasCapitalInProvince(selectedProvince, gameState) ? '🏛️ Yes' : '❌ No'}
+              </div>
             </div>
           </div>
         )}
       </div>
 
       {/* Map area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0 relative">
         {/* Turn & connection header */}
         <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center px-4 justify-between">
           <span className="text-sm text-gray-300">
@@ -173,9 +185,10 @@ export default function GameBoard({
           )}
         </div>
 
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-h-0 overflow-hidden">
           <HexGrid
             hexes={gameState.hexes}
+            provinces={gameState.provinces}
             selectedHex={selectedHex}
             onHexClick={onHexClick}
             currentPlayerId={currentPlayerId}
@@ -183,10 +196,11 @@ export default function GameBoard({
             playerIds={playerIds}
             validTargets={validMoves}
           />
+        </div>
 
-          {/* Floating Action Panel */}
+          {/* Floating Action Panel — fixed to viewport bottom center */}
           {actionsAvailable && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
               <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-2">
                 {/* Turn status */}
                 <span className={`text-xs font-semibold mr-2 ${isMyTurn ? 'text-green-400' : 'text-red-400'}`}>
@@ -251,6 +265,23 @@ export default function GameBoard({
 
                 <div className="w-px h-8 bg-slate-600 mx-1" />
 
+                {/* Retire unit button */}
+                <button
+                  disabled={!canRetire}
+                  onClick={() => {
+                    if (selectedHexData?.unit && onRetireUnit) {
+                      onRetireUnit(selectedHexData.unit.id);
+                    }
+                  }}
+                  title="Retire Unit (refund half cost)"
+                  className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span className="text-base leading-none">🏠</span>
+                  <span className="text-[10px] text-slate-300 mt-0.5">Retire</span>
+                </button>
+
+                <div className="w-px h-8 bg-slate-600 mx-1" />
+
                 {/* Surrender */}
                 <button
                   onClick={handleSurrender}
@@ -292,7 +323,6 @@ export default function GameBoard({
               </div>
             </div>
           )}
-        </div>
       </div>
     </div>
   );
@@ -337,4 +367,13 @@ function findProvinceForHex(
         p.hexes.some((h) => h.q === hex.q && h.r === hex.r),
     ) ?? null
   );
+}
+
+function hasCapitalInProvince(province: Province, gameState: GameState): boolean {
+  return province.hexes.some((coord) => {
+    const hex = gameState.hexes.find(
+      (h) => h.coord.q === coord.q && h.coord.r === coord.r,
+    );
+    return hex?.structure?.type === StructureTypeEnum.CAPITAL;
+  });
 }

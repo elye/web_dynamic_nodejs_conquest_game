@@ -19,6 +19,7 @@ import {
   moveUnit,
   buyUnit,
   buildStructure,
+  retireUnit,
   endTurn,
   surrender,
   undoAction,
@@ -122,6 +123,11 @@ function handleConnection(ws: WebSocket, playerId: string, gameId: string): void
         type: ServerMessageType.PLAYER_RECONNECTED,
         playerId,
       });
+
+      // Restart turn timer if it's the reconnected player's turn
+      if (gameState.status === GameStatus.IN_PROGRESS && gameState.currentTurnPlayerId === playerId) {
+        startTurnTimer(gameState, gameId);
+      }
     }
 
     sendToPlayer(playerId, {
@@ -245,6 +251,9 @@ function handleMessage(playerId: string, gameId: string, message: ClientMessage)
       case ClientMessageType.BUILD_STRUCTURE:
         handleBuildStructure(playerId, gameId, message.structureType, message.hex);
         break;
+      case ClientMessageType.RETIRE_UNIT:
+        handleRetireUnit(playerId, gameId, message.unitId);
+        break;
       case ClientMessageType.END_TURN:
         handleEndTurn(playerId, gameId);
         break;
@@ -333,8 +342,6 @@ function handleMoveUnit(
       winnerId: gameState.winnerId,
     },
   });
-
-  checkAndBroadcastGameOver(gameState, gameId);
 }
 
 function handleBuyUnit(
@@ -370,6 +377,27 @@ function handleBuildStructure(
   requireInProgress(gameState);
 
   buildStructure(gameState, playerId, structureType, hex);
+
+  sendToPlayer(playerId, {
+    type: ServerMessageType.GAME_STATE_DELTA,
+    delta: {
+      hexes: gameState.hexes,
+      provinces: gameState.provinces,
+      players: gameState.players,
+    },
+  });
+}
+
+function handleRetireUnit(
+  playerId: string,
+  gameId: string,
+  unitId: string,
+): void {
+  const gameState = getGameState(gameId);
+  if (!gameState) throw new Error('Game not found');
+  requireInProgress(gameState);
+
+  retireUnit(gameState, playerId, unitId);
 
   sendToPlayer(playerId, {
     type: ServerMessageType.GAME_STATE_DELTA,

@@ -84,3 +84,7 @@ export function startSoloGame(body: { mapSize: string; aiCount: number; aiDiffic
 export function ping(gameId: string, playerId: string): Promise<void> {
   return request('GET', `/ping?gameId=${encodeURIComponent(gameId)}&playerId=${encodeURIComponent(playerId)}`);
 }
+
+export function getActiveGame(): Promise<{ gameId: string | null; status?: string }> {
+  return request('GET', '/active-game');
+}
