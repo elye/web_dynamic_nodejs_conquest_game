@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AiDifficulty, GameRoom, GameState } from '@conquest/shared';
 import * as api from '../utils/api';
+import { navigateTo } from '../utils/navigation';
 
 interface LobbyState {
   games: GameRoom[];
@@ -43,6 +44,7 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     try {
       const room = await api.createGame(body);
       set({ currentRoom: room, isLoading: false });
+      navigateTo('room', room.id);
     } catch (e) {
       set({ error: (e as Error).message, isLoading: false });
     }
@@ -53,6 +55,7 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     try {
       const room = await api.joinGame(gameId, password);
       set({ currentRoom: room, isLoading: false });
+      navigateTo('room', room.id);
     } catch (e) {
       set({ error: (e as Error).message, isLoading: false });
     }
@@ -64,8 +67,8 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       await api.leaveGame(room.id);
-      localStorage.removeItem('conquest_gameId');
       set({ currentRoom: null, gameState: null, isLoading: false });
+      navigateTo('lobby');
     } catch (e) {
       set({ error: (e as Error).message, isLoading: false });
     }
@@ -78,6 +81,7 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     try {
       const gameState = await api.startGame(room.id);
       set({ gameState, isLoading: false });
+      navigateTo('game', gameState.id);
     } catch (e) {
       set({ error: (e as Error).message, isLoading: false });
     }
@@ -112,6 +116,7 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     try {
       const gameState = await api.startSoloGame({ mapSize, aiCount, aiDifficulty });
       set({ gameState, isLoading: false });
+      navigateTo('game', gameState.id);
     } catch (e) {
       set({ error: (e as Error).message, isLoading: false });
     }
@@ -130,12 +135,5 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     }
   },
 
-  setGameState: (gameState) => {
-    if (gameState) {
-      localStorage.setItem('conquest_gameId', gameState.id);
-    } else {
-      localStorage.removeItem('conquest_gameId');
-    }
-    set({ gameState });
-  },
+  setGameState: (gameState) => set({ gameState }),
 }));

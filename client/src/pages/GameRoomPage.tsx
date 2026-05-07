@@ -4,6 +4,7 @@ import type { AiDifficulty, GameRoom } from '@conquest/shared';
 import { useAuthStore } from '../store/authStore';
 import { useLobbyStore } from '../store/lobbyStore';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { navigateTo } from '../utils/navigation';
 import * as api from '../utils/api';
 
 interface ChatMessage {
@@ -31,11 +32,13 @@ export default function GameRoomPage() {
     if (lastMessage.type === ServerMessageType.LOBBY_UPDATE) {
       if (lastMessage.deleted) {
         setCurrentRoom(null);
+        navigateTo('lobby');
       } else {
         setCurrentRoom(lastMessage.room);
       }
     } else if (lastMessage.type === ServerMessageType.GAME_STARTED) {
       setGameState(lastMessage.state);
+      navigateTo('game', lastMessage.state.id);
     }
   }, [lastMessage, setCurrentRoom, setGameState]);
 

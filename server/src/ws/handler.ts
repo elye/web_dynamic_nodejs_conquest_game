@@ -24,6 +24,8 @@ import {
   surrender,
   undoAction,
   redoAction,
+  findActiveGameByPlayerId,
+  cleanupGame,
 } from '../game/engine.js';
 import { scheduleAITurnIfNeeded } from '../ai/aiEngine.js';
 
@@ -41,7 +43,7 @@ const clients = new Map<string, ConnectedClient>();
 const gracePeriodTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-const GRACE_PERIOD_MS = 120_000;
+const GRACE_PERIOD_MS = 60_000;
 
 // ── Sanitization ──
 
@@ -105,6 +107,58 @@ function handleConnection(ws: WebSocket, playerId: string, gameId: string): void
   if (existingTimer) {
     clearTimeout(existingTimer);
     gracePeriodTimers.delete(playerId);
+  }
+
+  // Auto-surrender from any previous game when connecting to a different one
+  const previousGame = findActiveGameByPlayerId(playerId);
+  if (previousGame && previousGame.gameId !== gameId) {
+    const prevState = getGameState(previousGame.gameId);
+    if (prevState) {
+      try {
+        surrender(prevState, playerId);
+        broadcastToGame(previousGame.gameId, {
+          type: ServerMessageType.GAME_STATE_DELTA,
+          delta: {
+            players: prevState.players,
+            hexes: prevState.hexes,
+            provinces: prevState.provinces,
+            currentTurnPlayerId: prevState.currentTurnPlayerId,
+            status: prevState.status,
+            winnerId: prevState.winnerId,
+          },
+        });
+        checkAndBroadcastGameOver(prevState, previousGame.gameId);
+        if (prevState.status === GameStatus.IN_PROGRESS) {
+          startTurnTimer(prevState, previousGame.gameId);
+          scheduleAITurnIfNeeded(prevState);
+        }
+      } catch {
+        // Player may already be eliminated
+      }
+    }
+  }
+
+  // Also leave any lobby room the player is in (if connecting to a different game)
+  const prevRoom = gameStore.findGameByPlayerId(playerId);
+  if (prevRoom && prevRoom.id !== gameId && prevRoom.status === GameStatus.LOBBY) {
+    const remaining = prevRoom.players.filter((p) => p.id !== playerId);
+    if (remaining.length === 0 || prevRoom.hostId === playerId) {
+      gameStore.deleteGame(prevRoom.id);
+      broadcastToGame(prevRoom.id, {
+        type: ServerMessageType.LOBBY_UPDATE,
+        room: { ...prevRoom, passwordHash: null, players: remaining },
+        deleted: true,
+      });
+    } else {
+      gameStore.updateGame(prevRoom.id, { players: remaining });
+      const updated = gameStore.getGame(prevRoom.id);
+      if (updated) {
+        broadcastToGame(prevRoom.id, {
+          type: ServerMessageType.LOBBY_UPDATE,
+          room: { ...updated, passwordHash: null },
+        });
+      }
+    }
   }
 
   clients.set(playerId, { ws, gameId, playerId });
@@ -617,13 +671,25 @@ function requireInProgress(gameState: GameState): void {
 }
 
 function checkAndBroadcastGameOver(gameState: GameState, gameId: string): void {
-  if (gameState.status === GameStatus.FINISHED && gameState.winnerId) {
+  if (gameState.status === GameStatus.FINISHED) {
     clearTurnTimer(gameId);
-    const winner = gameState.players.find((p) => p.id === gameState.winnerId);
-    broadcastToGame(gameId, {
-      type: ServerMessageType.GAME_OVER,
-      winnerId: gameState.winnerId,
-      reason: `${winner?.name ?? 'Unknown'} has conquered all opponents!`,
-    });
+    if (gameState.winnerId) {
+      const winner = gameState.players.find((p) => p.id === gameState.winnerId);
+      broadcastToGame(gameId, {
+        type: ServerMessageType.GAME_OVER,
+        winnerId: gameState.winnerId,
+        reason: `${winner?.name ?? 'Unknown'} has conquered all opponents!`,
+      });
+    } else {
+      broadcastToGame(gameId, {
+        type: ServerMessageType.GAME_OVER,
+        winnerId: '',
+        reason: 'All human players have been eliminated. Game over!',
+      });
+    }
+    // Clean up game state after a short delay (let clients receive the game over message)
+    setTimeout(() => {
+      cleanupGame(gameId);
+    }, 5000);
   }
 }

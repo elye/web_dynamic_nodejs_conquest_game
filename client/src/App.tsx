@@ -1,11 +1,66 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState, useCallback } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import { GameStatus } from '@conquest/shared';
 import LobbyPage from './pages/LobbyPage';
 import GameRoomPage from './pages/GameRoomPage';
 import GamePage from './pages/GamePage';
 import { useAuthStore } from './store/authStore';
 import { useLobbyStore } from './store/lobbyStore';
-import { getActiveGame } from './utils/api';
+import { getActiveGame, getGame } from './utils/api';
+import { parseHash, navigateTo } from './utils/navigation';
+
+// ── Error Boundary ──
+
+interface ErrorBoundaryState {
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('App error:', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-8">
+          <div className="bg-red-900/30 border border-red-700 rounded-xl p-6 max-w-lg text-center">
+            <h2 className="text-xl font-bold text-red-400 mb-2">Something went wrong</h2>
+            <p className="text-gray-300 text-sm mb-4">{this.state.error.message}</p>
+            <button
+              onClick={() => {
+                this.setState({ error: null });
+                navigateTo('lobby');
+              }}
+              className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500"
+            >
+              Back to Lobby
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function useHashRoute() {
+  const [route, setRoute] = useState(parseHash);
+
+  useEffect(() => {
+    const onHashChange = () => setRoute(parseHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  return route;
+}
 
 function WelcomeScreen() {
   const login = useAuthStore((s) => s.login);
@@ -53,36 +108,56 @@ function WelcomeScreen() {
 function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const restore = useAuthStore((s) => s.restore);
-  const { currentRoom, gameState, setGameState } = useLobbyStore();
+  const { currentRoom, gameState, setGameState, setCurrentRoom } = useLobbyStore();
+  const route = useHashRoute();
   const [isRejoining, setIsRejoining] = useState(false);
 
   useEffect(() => {
     restore();
   }, [restore]);
 
-  // Rejoin active game after page refresh
+  // Rejoin game/room from URL hash on page load
   useEffect(() => {
     if (!isAuthenticated || gameState || currentRoom) return;
-
-    const savedGameId = localStorage.getItem('conquest_gameId');
-    if (!savedGameId) return;
+    if (route.page === 'lobby' || !route.gameId) return;
 
     setIsRejoining(true);
     getActiveGame()
-      .then((result) => {
-        if (result.gameId && result.status === GameStatus.IN_PROGRESS) {
-          // Set a minimal game state so the router shows GamePage.
-          // The WebSocket will deliver GAME_STATE_FULL on connect.
+      .then(async (result) => {
+        if (result.gameId === route.gameId && result.status === GameStatus.IN_PROGRESS) {
           setGameState({ id: result.gameId, status: GameStatus.IN_PROGRESS } as any);
+        } else if (result.gameId === route.gameId && result.status === GameStatus.LOBBY) {
+          const room = await getGame(result.gameId);
+          setCurrentRoom(room);
         } else {
-          localStorage.removeItem('conquest_gameId');
+          // Game not found or player not in it — go back to lobby
+          navigateTo('lobby');
         }
       })
       .catch(() => {
-        localStorage.removeItem('conquest_gameId');
+        navigateTo('lobby');
       })
       .finally(() => setIsRejoining(false));
-  }, [isAuthenticated, gameState, currentRoom, setGameState]);
+  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync hash when game state changes
+  const syncHash = useCallback(() => {
+    if (gameState && gameState.status === GameStatus.IN_PROGRESS) {
+      const current = parseHash();
+      if (current.page !== 'game' || current.gameId !== gameState.id) {
+        navigateTo('game', gameState.id);
+      }
+    } else if (currentRoom && currentRoom.status === GameStatus.LOBBY) {
+      const current = parseHash();
+      if (current.page !== 'room' || current.gameId !== currentRoom.id) {
+        navigateTo('room', currentRoom.id);
+      }
+    }
+  }, [gameState, currentRoom]);
+
+  useEffect(() => {
+    syncHash();
+  }, [syncHash]);
 
   if (!isAuthenticated) {
     return <WelcomeScreen />;
@@ -110,4 +185,10 @@ function App() {
   return <LobbyPage />;
 }
 
-export default App;
+export default function AppWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
