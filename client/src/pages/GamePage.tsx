@@ -17,6 +17,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { usePing } from '../hooks/usePing';
 import GameBoard from '../components/GameBoard';
 import HowToPlay from '../components/HowToPlay';
+import { navigateTo } from '../utils/navigation';
 
 export default function GamePage() {
   const playerId = useAuthStore((s) => s.playerId);
@@ -48,9 +49,9 @@ export default function GamePage() {
   );
   const { pingWarning } = usePing(gameId, playerId);
 
-  // Seed gameStore from lobby's initial state
+  // Seed gameStore from lobby's initial state (only if it's a full state)
   useEffect(() => {
-    if (lobbyGameState && !gameState) {
+    if (lobbyGameState && !gameState && lobbyGameState.hexes) {
       setGameState(lobbyGameState);
     }
   }, [lobbyGameState, gameState, setGameState]);
@@ -89,11 +90,14 @@ export default function GamePage() {
         showNotification(`Player reconnected: ${msg.playerId}`);
         break;
       case ServerMessageType.GAME_OVER: {
-        localStorage.removeItem('conquest_gameId');
-        const winnerName =
-          gameState?.players.find((p) => p.id === msg.winnerId)?.name ??
-          msg.winnerId;
-        setGameOverMsg(`${winnerName} wins! ${msg.reason}`);
+        if (msg.winnerId) {
+          const winnerName =
+            gameState?.players.find((p) => p.id === msg.winnerId)?.name ??
+            msg.winnerId;
+          setGameOverMsg(`${winnerName} wins! ${msg.reason}`);
+        } else {
+          setGameOverMsg(msg.reason);
+        }
         break;
       }
       case ServerMessageType.CHAT_BROADCAST:
@@ -191,7 +195,6 @@ export default function GamePage() {
   }, [sendMessage]);
 
   const handleSurrender = useCallback(() => {
-    localStorage.removeItem('conquest_gameId');
     sendMessage({ type: ClientMessageType.SURRENDER });
   }, [sendMessage]);
 
@@ -266,7 +269,11 @@ export default function GamePage() {
             <h2 className="text-2xl font-bold text-white mb-2">Game Over</h2>
             <p className="text-gray-300 mb-6">{gameOverMsg}</p>
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => {
+                resetGame();
+                useLobbyStore.getState().setGameState(null);
+                navigateTo('lobby');
+              }}
               className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
             >
               Back to Lobby

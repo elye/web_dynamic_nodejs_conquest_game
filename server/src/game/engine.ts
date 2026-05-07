@@ -145,6 +145,13 @@ export function findActiveGameByPlayerId(playerId: string): { gameId: string; st
   return null;
 }
 
+export function cleanupGame(gameId: string): void {
+  gameStates.delete(gameId);
+  turnSnapshotStacks.delete(gameId);
+  redoStacks.delete(gameId);
+  gameStore.deleteGame(gameId);
+}
+
 export function startGame(gameId: string): GameState {
   const room = gameStore.getGame(gameId);
   if (!room) throw new Error(`Game room ${gameId} not found`);
@@ -945,5 +952,13 @@ function checkWinCondition(gameState: GameState): void {
   if (activePlayers.length <= 1) {
     gameState.status = GameStatus.FINISHED;
     gameState.winnerId = activePlayers[0]?.id ?? null;
+    return;
+  }
+
+  // End the game if all remaining human players are eliminated (only AI left)
+  const activeHumans = activePlayers.filter((p) => !p.isAI);
+  if (activeHumans.length === 0) {
+    gameState.status = GameStatus.FINISHED;
+    gameState.winnerId = null;
   }
 }

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { randomBytes } from 'node:crypto';
 import { GameStatus, ServerMessageType, type AiDifficulty, type GameRoom, type GameRoomPlayer } from '@conquest/shared';
 import { gameStore } from '../store/gameStore.js';
 import { sessionStore } from '../store/sessionStore.js';
@@ -7,6 +7,24 @@ import { startGame } from '../game/engine.js';
 import { authMiddleware } from './middleware/auth.js';
 import { broadcastToGame, startTurnTimer } from '../ws/index.js';
 import { scheduleAITurnIfNeeded } from '../ai/aiEngine.js';
+
+function generateShortId(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
+  const bytes = randomBytes(6);
+  let id = '';
+  for (let i = 0; i < 6; i++) {
+    id += chars[bytes[i] % chars.length];
+  }
+  return id;
+}
+
+function uniqueShortId(): string {
+  for (let i = 0; i < 10; i++) {
+    const id = generateShortId();
+    if (!gameStore.getGame(id)) return id;
+  }
+  return generateShortId(); // fallback
+}
 
 const router = Router();
 
@@ -56,7 +74,7 @@ router.post('/', authMiddleware, (req, res) => {
     const players: GameRoomPlayer[] = [hostPlayer];
 
     const room: GameRoom = {
-      id: uuidv4(),
+      id: uniqueShortId(),
       name: name.trim().slice(0, 50),
       hostId: playerId,
       settings: {
@@ -241,7 +259,7 @@ router.post('/:id/add-ai', authMiddleware, (req, res) => {
     }
 
     const aiPlayer: GameRoomPlayer = {
-      id: uuidv4(),
+      id: randomBytes(16).toString('hex'),
       name: `AI_${String(Math.floor(1000 + Math.random() * 9000))}`,
       isReady: true,
       isAI: true,
@@ -343,7 +361,7 @@ router.post('/solo', authMiddleware, (req, res) => {
     };
 
     const aiPlayers: GameRoomPlayer[] = Array.from({ length: count }, () => ({
-      id: uuidv4(),
+      id: randomBytes(16).toString('hex'),
       name: `AI_${String(Math.floor(1000 + Math.random() * 9000))}`,
       isReady: true,
       isAI: true,
@@ -351,7 +369,7 @@ router.post('/solo', authMiddleware, (req, res) => {
     }));
 
     const room: GameRoom = {
-      id: uuidv4(),
+      id: uniqueShortId(),
       name: `Solo_${playerName}_${Date.now()}`,
       hostId: playerId,
       settings: {
