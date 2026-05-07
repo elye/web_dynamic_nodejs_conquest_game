@@ -201,7 +201,7 @@ export default function GameBoard({
           {/* Floating Action Panel — fixed to viewport bottom center */}
           {actionsAvailable && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
-              <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-2">
+              <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-2 select-none" onDragStart={(e) => e.preventDefault()}>
                 {/* Turn status */}
                 <span className={`text-xs font-semibold mr-2 ${isMyTurn ? 'text-green-400' : 'text-red-400'}`}>
                   {isMyTurn ? '✓ Your turn' : '✗ Wait'}

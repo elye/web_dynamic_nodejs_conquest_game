@@ -49,7 +49,17 @@ export default function ActionBar({
   };
 
   return (
-    <div className="h-14 bg-gray-800 border-t border-gray-700 flex items-center px-3 gap-2 overflow-x-auto">
+    <div
+      className="h-14 bg-gray-800 border-t border-gray-700 flex items-center px-3 gap-2 overflow-x-auto select-none"
+      onDragStart={(e) => e.preventDefault()}
+      onMouseDown={(e) => {
+        // Prevent text selection and drag ghosts when clicking/dragging on the bar
+        if ((e.target as HTMLElement).tagName !== 'BUTTON') {
+          e.preventDefault();
+        }
+      }}
+      style={{ WebkitUserDrag: 'none' } as React.CSSProperties}
+    >
       {/* Turn timer */}
       {turnTimeRemaining !== null && (
         <span className="text-xs font-mono text-yellow-400 shrink-0 mr-1">
@@ -61,6 +71,7 @@ export default function ActionBar({
       {buyButtons.map((b) => (
         <button
           key={b.unitType}
+          draggable={false}
           disabled={!isMyTurn || !hasHex || gold < b.cost}
           onClick={() => selectedHex && onBuyUnit(b.unitType, selectedHex)}
           className="px-2 py-1 rounded bg-gray-700 text-xs text-gray-200 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
@@ -75,6 +86,7 @@ export default function ActionBar({
       {buildButtons.map((b) => (
         <button
           key={b.structureType}
+          draggable={false}
           disabled={!isMyTurn || !hasHex || gold < b.cost}
           onClick={() => selectedHex && onBuildStructure(b.structureType, selectedHex)}
           className="px-2 py-1 rounded bg-gray-700 text-xs text-gray-200 hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
@@ -87,6 +99,7 @@ export default function ActionBar({
 
       {/* Surrender */}
       <button
+        draggable={false}
         onClick={handleSurrender}
         className="px-2 py-1 rounded bg-red-900/60 text-xs text-red-300 hover:bg-red-800 transition-colors shrink-0"
       >
@@ -95,6 +108,7 @@ export default function ActionBar({
 
       {/* End turn */}
       <button
+        draggable={false}
         disabled={!isMyTurn}
         onClick={onEndTurn}
         className="px-4 py-1.5 rounded bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"

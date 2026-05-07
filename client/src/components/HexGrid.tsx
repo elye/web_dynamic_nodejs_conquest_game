@@ -45,6 +45,7 @@ export default function HexGrid({
   const containerRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<Camera>({ x: 0, y: 0, zoom: 1 });
   const isDraggingRef = useRef(false);
+  const isPanningRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef<number>(0);
   const [hoveredHex, setHoveredHex] = useState<HexCoord | null>(null);
@@ -422,6 +423,7 @@ export default function HexGrid({
   // Mouse handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDraggingRef.current = false;
+    isPanningRef.current = true;
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
   }, []);
 
@@ -430,8 +432,8 @@ export default function HexGrid({
       const canvas = canvasRef.current;
       if (!canvas) return;
 
-      if (e.buttons === 1) {
-        // Pan
+      if (e.buttons === 1 && isPanningRef.current) {
+        // Pan (only if mousedown originated on the canvas)
         const dx = e.clientX - lastMouseRef.current.x;
         const dy = e.clientY - lastMouseRef.current.y;
         if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
@@ -460,6 +462,7 @@ export default function HexGrid({
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent) => {
+      isPanningRef.current = false;
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
         return;
