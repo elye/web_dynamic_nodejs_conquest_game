@@ -20,6 +20,7 @@ import {
   moveUnit,
   buyUnit,
   buildStructure,
+  retireUnit,
   endTurn,
 } from '../game/engine.js';
 import { coordKey, getHexNeighbors, hexDistance } from '../game/mapGenerator.js';
@@ -367,6 +368,28 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
 
   // Build towers on border hexes
   const borderHexes = getBorderHexes(gameState, playerId);
+
+  // Retire units in provinces about to go bankrupt (upkeep > income + gold)
+  for (const province of provinces) {
+    while (province.upkeep > province.income + province.gold) {
+      // Find the weakest unit in this province
+      const provinceUnits = province.hexes
+        .map((c) => gameState.hexes.find((h) => h.coord.q === c.q && h.coord.r === c.r))
+        .filter((h): h is Hex => !!h && !!h.unit && h.unit.owner === playerId)
+        .sort((a, b) => UNIT_STRENGTH[a.unit!.type] - UNIT_STRENGTH[b.unit!.type]);
+
+      if (provinceUnits.length === 0) break;
+
+      try {
+        retireUnit(gameState, playerId, provinceUnits[0].unit!.id);
+        broadcastDelta(gameState);
+        await randomDelay();
+      } catch {
+        break;
+      }
+    }
+  }
+
   for (const hex of borderHexes) {
     if (hex.unit || hex.structure) continue;
 
@@ -438,6 +461,39 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
 
   // 1. Save provinces at risk of bankruptcy — don't buy if going bankrupt
   const provinces = gameState.provinces.filter((p) => p.owner === playerId);
+
+  // Retire units in provinces about to go bankrupt — prefer isolated/non-border units
+  for (const province of provinces) {
+    while (province.upkeep > province.income + province.gold) {
+      const provinceUnits = province.hexes
+        .map((c) => gameState.hexes.find((h) => h.coord.q === c.q && h.coord.r === c.r))
+        .filter((h): h is Hex => !!h && !!h.unit && h.unit.owner === playerId);
+
+      if (provinceUnits.length === 0) break;
+
+      // Score units: prefer retiring isolated/non-border units first
+      const scored = provinceUnits.map((h) => {
+        const neighbors = getHexNeighbors(h.coord.q, h.coord.r);
+        const nearBorder = neighbors.some((nc) => {
+          const n = lookup.get(coordKey(nc.q, nc.r));
+          return n && n.terrain !== TerrainType.WATER && n.owner !== playerId && n.owner !== null;
+        });
+        // Lower score = retire first: weak units far from borders
+        let score = UNIT_STRENGTH[h.unit!.type] * 10;
+        if (nearBorder) score += 50; // Keep border units
+        return { hex: h, score };
+      });
+      scored.sort((a, b) => a.score - b.score);
+
+      try {
+        retireUnit(gameState, playerId, scored[0].hex.unit!.id);
+        broadcastDelta(gameState);
+        await randomDelay();
+      } catch {
+        break;
+      }
+    }
+  }
 
   // 2. Buy units strategically
   for (const province of provinces) {

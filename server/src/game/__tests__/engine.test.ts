@@ -5,6 +5,7 @@ import {
   moveUnit,
   buyUnit,
   buildStructure,
+  retireUnit,
   endTurn,
   surrender,
   undoAction,
@@ -1868,5 +1869,180 @@ describe('gold capture from enemy capitals', () => {
       (h) => h.coord.q === 2 && h.coord.r === 0,
     );
     expect(capitalHex?.structure?.type).toBe(StructureType.CAPITAL);
+  });
+});
+
+// ── retireUnit ──
+
+describe('retireUnit', () => {
+  let gs: GameState;
+  const gameId = 'retire-test';
+
+  beforeEach(() => {
+    gameStore.deleteGame(gameId);
+    createTestRoom(gameId, ['p1', 'p2']);
+    gs = startGame(gameId);
+  });
+
+  function findP1UnitHex(): Hex {
+    const hex = gs.hexes.find((h) => h.unit?.owner === 'p1');
+    if (!hex) throw new Error('No p1 unit found');
+    return hex;
+  }
+
+  it('refunds half cost to province gold for Peasant', () => {
+    const unitHex = findP1UnitHex();
+    const unitId = unitHex.unit!.id;
+    expect(unitHex.unit!.type).toBe(UnitType.PEASANT);
+
+    const province = gs.provinces.find(
+      (p) =>
+        p.owner === 'p1' &&
+        p.hexes.some((h) => h.q === unitHex.coord.q && h.r === unitHex.coord.r),
+    )!;
+    const goldBefore = province.gold;
+
+    retireUnit(gs, 'p1', unitId);
+
+    // After recalculation, find the province containing the hex
+    const provAfter = gs.provinces.find(
+      (p) =>
+        p.owner === 'p1' &&
+        p.hexes.some((h) => h.q === unitHex.coord.q && h.r === unitHex.coord.r),
+    );
+    // Refund: Math.floor(10 / 2) = 5
+    expect(provAfter!.gold).toBe(goldBefore + 5);
+  });
+
+  it('removes unit from hex but keeps owner', () => {
+    const unitHex = findP1UnitHex();
+    const unitId = unitHex.unit!.id;
+    const coord = { ...unitHex.coord };
+
+    retireUnit(gs, 'p1', unitId);
+
+    const hex = gs.hexes.find((h) => h.coord.q === coord.q && h.coord.r === coord.r)!;
+    expect(hex.unit).toBeNull();
+    expect(hex.owner).toBe('p1');
+  });
+
+  it('reduces province upkeep', () => {
+    const unitHex = findP1UnitHex();
+    const unitId = unitHex.unit!.id;
+    const unitUpkeep = unitHex.unit!.upkeep;
+
+    const totalUpkeepBefore = gs.provinces
+      .filter((p) => p.owner === 'p1')
+      .reduce((sum, p) => sum + p.upkeep, 0);
+
+    retireUnit(gs, 'p1', unitId);
+
+    const totalUpkeepAfter = gs.provinces
+      .filter((p) => p.owner === 'p1')
+      .reduce((sum, p) => sum + p.upkeep, 0);
+
+    expect(totalUpkeepAfter).toBe(totalUpkeepBefore - unitUpkeep);
+  });
+
+  it('cannot retire enemy units', () => {
+    const p2Hex = gs.hexes.find((h) => h.unit?.owner === 'p2');
+    if (!p2Hex) throw new Error('No p2 unit found');
+
+    expect(() => retireUnit(gs, 'p1', p2Hex.unit!.id)).toThrow(
+      'does not belong to you',
+    );
+  });
+
+  it("cannot retire on other player's turn", () => {
+    const p2Hex = gs.hexes.find((h) => h.unit?.owner === 'p2');
+    if (!p2Hex) throw new Error('No p2 unit found');
+
+    expect(() => retireUnit(gs, 'p2', p2Hex.unit!.id)).toThrow('Not your turn');
+  });
+
+  it('can be undone', () => {
+    const unitHex = findP1UnitHex();
+    const unitId = unitHex.unit!.id;
+    const coord = { ...unitHex.coord };
+
+    retireUnit(gs, 'p1', unitId);
+
+    // Unit should be gone
+    const hexAfterRetire = gs.hexes.find(
+      (h) => h.coord.q === coord.q && h.coord.r === coord.r,
+    )!;
+    expect(hexAfterRetire.unit).toBeNull();
+
+    // Undo
+    const restored = undoAction(gameId, 'p1');
+    const restoredHex = restored.hexes.find(
+      (h) => h.coord.q === coord.q && h.coord.r === coord.r,
+    )!;
+    expect(restoredHex.unit).not.toBeNull();
+    expect(restoredHex.unit!.id).toBe(unitId);
+  });
+
+  it('clears redo stack', () => {
+    const unitHex = findP1UnitHex();
+    const unitId = unitHex.unit!.id;
+
+    // Do a move, undo it (creates redo entry), then retire
+    const emptyHex = gs.hexes.find(
+      (h) => h.owner === 'p1' && !h.unit && !h.structure,
+    );
+    if (emptyHex) {
+      const prov = gs.provinces.find((p) => p.owner === 'p1')!;
+      prov.gold = 200;
+      buyUnit(gs, 'p1', UnitType.PEASANT, emptyHex.coord);
+      undoAction(gameId, 'p1');
+      // Now redo stack has an entry
+
+      // Retire the original unit — should clear redo stack
+      const freshGs = getGameState(gameId)!;
+      const freshUnitHex = freshGs.hexes.find((h) => h.unit?.owner === 'p1');
+      if (freshUnitHex) {
+        retireUnit(freshGs, 'p1', freshUnitHex.unit!.id);
+        expect(() => redoAction(gameId, 'p1')).toThrow('Nothing to redo');
+      }
+    }
+  });
+
+  it('can retire a unit that has already moved', () => {
+    const unitHex = findP1UnitHex();
+    const unitId = unitHex.unit!.id;
+
+    // Find an adjacent valid target to move to
+    const neighbors = [
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r },
+      { q: unitHex.coord.q, r: unitHex.coord.r + 1 },
+      { q: unitHex.coord.q, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q + 1, r: unitHex.coord.r - 1 },
+      { q: unitHex.coord.q - 1, r: unitHex.coord.r + 1 },
+    ];
+    let targetCoord = null;
+    for (const nc of neighbors) {
+      const hex = gs.hexes.find((h) => h.coord.q === nc.q && h.coord.r === nc.r);
+      if (hex && hex.terrain !== TerrainType.WATER && (hex.owner === 'p1' || hex.owner === null) && !hex.unit && !hex.structure) {
+        targetCoord = nc;
+        break;
+      }
+    }
+    if (!targetCoord) throw new Error('No valid adjacent target');
+
+    // Move the unit (hasMoved becomes true)
+    moveUnit(gs, 'p1', unitId, targetCoord);
+    const movedGs = getGameState(gameId)!;
+    const movedUnit = movedGs.hexes.find(
+      (h) => h.coord.q === targetCoord!.q && h.coord.r === targetCoord!.r,
+    )!;
+    expect(movedUnit.unit!.hasMoved).toBe(true);
+
+    // Retire should still work
+    retireUnit(movedGs, 'p1', unitId);
+    const retiredHex = movedGs.hexes.find(
+      (h) => h.coord.q === targetCoord!.q && h.coord.r === targetCoord!.r,
+    )!;
+    expect(retiredHex.unit).toBeNull();
   });
 });

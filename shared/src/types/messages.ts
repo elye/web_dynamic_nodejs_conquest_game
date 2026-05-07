@@ -13,6 +13,7 @@ export enum ClientMessageType {
   BUY_UNIT = 'BUY_UNIT',
   BUILD_STRUCTURE = 'BUILD_STRUCTURE',
   END_TURN = 'END_TURN',
+  RETIRE_UNIT = 'RETIRE_UNIT',
   UNDO_TURN = 'UNDO_TURN',
   REDO_ACTION = 'REDO_ACTION',
   CHAT_MESSAGE = 'CHAT_MESSAGE',
@@ -98,6 +99,11 @@ export interface SurrenderMessage {
   type: ClientMessageType.SURRENDER;
 }
 
+export interface RetireUnitMessage {
+  type: ClientMessageType.RETIRE_UNIT;
+  unitId: string;
+}
+
 export interface UndoTurnMessage {
   type: ClientMessageType.UNDO_TURN;
 }
@@ -123,6 +129,7 @@ export type ClientMessage =
   | BuyUnitMessage
   | BuildStructureMessage
   | EndTurnMessage
+  | RetireUnitMessage
   | UndoTurnMessage
   | RedoActionMessage
   | ChatMessage

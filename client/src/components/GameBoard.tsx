@@ -22,6 +22,7 @@ interface GameBoardProps {
   onUndo?: () => void;
   onRedo?: () => void;
   onSurrender?: () => void;
+  onRetireUnit?: (unitId: string) => void;
   isConnected?: boolean;
 }
 
@@ -39,6 +40,7 @@ export default function GameBoard({
   onUndo,
   onRedo,
   onSurrender,
+  onRetireUnit,
   isConnected,
 }: GameBoardProps) {
   const playerIds = gameState.players.map((p) => p.id);
@@ -53,6 +55,17 @@ export default function GameBoard({
   const gold = selectedProvince?.gold ?? 0;
   const hasHex = selectedHex !== null;
   const actionsAvailable = !!(onBuyUnit && onBuildStructure && onEndTurn && onSurrender);
+
+  // Check if selected hex has a unit owned by the current player (for retire)
+  const selectedHexData = selectedHex
+    ? gameState.hexes.find(
+        (h) => h.coord.q === selectedHex.q && h.coord.r === selectedHex.r,
+      )
+    : null;
+  const canRetire =
+    isMyTurn &&
+    selectedHexData?.unit != null &&
+    selectedHexData.unit.owner === currentPlayerId;
 
   const handleSurrender = () => {
     if (window.confirm('Are you sure you want to surrender?')) {
@@ -247,6 +260,23 @@ export default function GameBoard({
                   onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.STRONG_TOWER, selectedHex)}
                   title="Build Strong Tower"
                 />
+
+                <div className="w-px h-8 bg-slate-600 mx-1" />
+
+                {/* Retire unit button */}
+                <button
+                  disabled={!canRetire}
+                  onClick={() => {
+                    if (selectedHexData?.unit && onRetireUnit) {
+                      onRetireUnit(selectedHexData.unit.id);
+                    }
+                  }}
+                  title="Retire Unit (refund half cost)"
+                  className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span className="text-base leading-none">🏠</span>
+                  <span className="text-[10px] text-slate-300 mt-0.5">Retire</span>
+                </button>
 
                 <div className="w-px h-8 bg-slate-600 mx-1" />
 

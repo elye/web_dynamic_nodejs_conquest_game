@@ -196,6 +196,13 @@ export default function GamePage() {
     sendMessage({ type: ClientMessageType.SURRENDER });
   }, [sendMessage]);
 
+  const handleRetireUnit = useCallback(
+    (unitId: string) => {
+      sendMessage({ type: ClientMessageType.RETIRE_UNIT, unitId });
+    },
+    [sendMessage],
+  );
+
   // Cleanup on unmount
   useEffect(() => {
     return () => resetGame();
@@ -225,6 +232,7 @@ export default function GamePage() {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onSurrender={handleSurrender}
+        onRetireUnit={handleRetireUnit}
         isConnected={isConnected}
       />
 

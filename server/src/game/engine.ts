@@ -587,6 +587,54 @@ export function buildStructure(
   return gameState;
 }
 
+export function retireUnit(
+  gameState: GameState,
+  playerId: string,
+  unitId: string,
+): GameState {
+  if (gameState.currentTurnPlayerId !== playerId) {
+    throw new Error('Not your turn');
+  }
+
+  // Snapshot before mutation for step-by-step undo
+  const stack = turnSnapshotStacks.get(gameState.id) ?? [];
+  stack.push(structuredClone(gameState));
+  turnSnapshotStacks.set(gameState.id, stack);
+
+  // Clear redo stack (new action invalidates redo history)
+  redoStacks.set(gameState.id, []);
+
+  // Find the unit
+  const unitHex = gameState.hexes.find((h) => h.unit?.id === unitId);
+  if (!unitHex?.unit) throw new Error('Unit not found');
+  if (unitHex.unit.owner !== playerId) {
+    throw new Error('Unit does not belong to you');
+  }
+
+  const unit = unitHex.unit;
+
+  // Find the province containing this hex
+  const province = findProvinceForHex(gameState.provinces, unitHex.coord, playerId);
+  if (!province) throw new Error('Unit hex does not belong to any province');
+
+  // Refund half purchase price (rounded down)
+  const refund = Math.floor(UNIT_COST[unit.type] / 2);
+  province.gold += refund;
+
+  // Remove unit from hex (hex keeps its owner)
+  unitHex.unit = null;
+
+  // Recalculate provinces (upkeep changes)
+  recalculateAllProvinces(gameState);
+  for (const player of gameState.players) {
+    player.provinces = gameState.provinces
+      .filter((p) => p.owner === player.id)
+      .map((p) => p.id);
+  }
+
+  return gameState;
+}
+
 export function endTurn(gameState: GameState): GameState {
   const currentPlayerId = gameState.currentTurnPlayerId;
   if (!currentPlayerId) throw new Error('No current player');

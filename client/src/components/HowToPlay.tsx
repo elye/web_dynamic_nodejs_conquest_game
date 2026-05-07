@@ -50,7 +50,7 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
             <ul className="list-disc list-inside space-y-1">
               <li>Every province (2+ connected hexes) gets a capital automatically.</li>
               <li>You need a capital to buy units in that province.</li>
-              <li>Capturing an enemy capital destroys their treasury (gold → 0).</li>
+              <li>Capturing an enemy capital transfers its gold to your richest province at end of turn.</li>
               <li>If territory splits, the fragment with the capital keeps all gold. The new fragment gets a new capital with 0 gold.</li>
               <li>Capitals provide +2 defense (like a Strong Tower).</li>
             </ul>
@@ -76,6 +76,7 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
               </tbody>
             </table>
             <p className="mt-1 text-xs text-gray-400">Merge two units on the same hex to upgrade (e.g. Peasant + Peasant = Spearman).</p>
+            <p className="mt-1 text-xs text-gray-400">🏠 <strong>Retire</strong> a unit to remove it and reclaim half its cost (5g / 10g / 15g / 20g). Also reduces upkeep.</p>
           </section>
 
           {/* Combat */}
@@ -109,8 +110,8 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
           <section>
             <h3 className="text-white font-semibold mb-1">💡 Tips</h3>
             <ul className="list-disc list-inside space-y-1">
-              <li>Protect your capitals — losing one means losing all that province&apos;s gold.</li>
-              <li>Target enemy capitals to cripple their economy.</li>
+              <li>Protect your capitals — losing one gives the attacker all that province&apos;s gold.</li>
+              <li>Target enemy capitals to steal their gold and cripple their economy.</li>
               <li>Split enemy territory to create weak fragments with 0 gold.</li>
               <li>Don&apos;t over-expand — watch your upkeep!</li>
             </ul>
