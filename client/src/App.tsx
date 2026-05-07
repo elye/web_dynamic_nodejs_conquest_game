@@ -5,6 +5,7 @@ import GameRoomPage from './pages/GameRoomPage';
 import GamePage from './pages/GamePage';
 import { useAuthStore } from './store/authStore';
 import { useLobbyStore } from './store/lobbyStore';
+import { getActiveGame } from './utils/api';
 
 function WelcomeScreen() {
   const login = useAuthStore((s) => s.login);
@@ -52,14 +53,47 @@ function WelcomeScreen() {
 function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const restore = useAuthStore((s) => s.restore);
-  const { currentRoom, gameState } = useLobbyStore();
+  const { currentRoom, gameState, setGameState } = useLobbyStore();
+  const [isRejoining, setIsRejoining] = useState(false);
 
   useEffect(() => {
     restore();
   }, [restore]);
 
+  // Rejoin active game after page refresh
+  useEffect(() => {
+    if (!isAuthenticated || gameState || currentRoom) return;
+
+    const savedGameId = localStorage.getItem('conquest_gameId');
+    if (!savedGameId) return;
+
+    setIsRejoining(true);
+    getActiveGame()
+      .then((result) => {
+        if (result.gameId && result.status === GameStatus.IN_PROGRESS) {
+          // Set a minimal game state so the router shows GamePage.
+          // The WebSocket will deliver GAME_STATE_FULL on connect.
+          setGameState({ id: result.gameId, status: GameStatus.IN_PROGRESS } as any);
+        } else {
+          localStorage.removeItem('conquest_gameId');
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('conquest_gameId');
+      })
+      .finally(() => setIsRejoining(false));
+  }, [isAuthenticated, gameState, currentRoom, setGameState]);
+
   if (!isAuthenticated) {
     return <WelcomeScreen />;
+  }
+
+  if (isRejoining) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <p className="text-gray-400">Reconnecting to game...</p>
+      </div>
+    );
   }
 
   // Game in progress

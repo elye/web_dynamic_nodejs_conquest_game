@@ -123,6 +123,11 @@ function handleConnection(ws: WebSocket, playerId: string, gameId: string): void
         type: ServerMessageType.PLAYER_RECONNECTED,
         playerId,
       });
+
+      // Restart turn timer if it's the reconnected player's turn
+      if (gameState.status === GameStatus.IN_PROGRESS && gameState.currentTurnPlayerId === playerId) {
+        startTurnTimer(gameState, gameId);
+      }
     }
 
     sendToPlayer(playerId, {

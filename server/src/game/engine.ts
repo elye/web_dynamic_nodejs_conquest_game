@@ -123,6 +123,15 @@ export function getGameState(gameId: string): GameState | undefined {
   return gameStates.get(gameId);
 }
 
+export function findActiveGameByPlayerId(playerId: string): { gameId: string; status: GameStatus } | null {
+  for (const [gameId, state] of gameStates) {
+    if (state.status !== GameStatus.IN_PROGRESS) continue;
+    const player = state.players.find((p) => p.id === playerId && !p.isEliminated);
+    if (player) return { gameId, status: state.status };
+  }
+  return null;
+}
+
 export function startGame(gameId: string): GameState {
   const room = gameStore.getGame(gameId);
   if (!room) throw new Error(`Game room ${gameId} not found`);

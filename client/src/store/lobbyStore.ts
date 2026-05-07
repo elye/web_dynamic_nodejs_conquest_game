@@ -64,7 +64,8 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       await api.leaveGame(room.id);
-      set({ currentRoom: null, isLoading: false });
+      localStorage.removeItem('conquest_gameId');
+      set({ currentRoom: null, gameState: null, isLoading: false });
     } catch (e) {
       set({ error: (e as Error).message, isLoading: false });
     }
@@ -129,5 +130,12 @@ export const useLobbyStore = create<LobbyState>((set, get) => ({
     }
   },
 
-  setGameState: (gameState) => set({ gameState }),
+  setGameState: (gameState) => {
+    if (gameState) {
+      localStorage.setItem('conquest_gameId', gameState.id);
+    } else {
+      localStorage.removeItem('conquest_gameId');
+    }
+    set({ gameState });
+  },
 }));

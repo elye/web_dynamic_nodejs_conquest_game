@@ -89,6 +89,7 @@ export default function GamePage() {
         showNotification(`Player reconnected: ${msg.playerId}`);
         break;
       case ServerMessageType.GAME_OVER: {
+        localStorage.removeItem('conquest_gameId');
         const winnerName =
           gameState?.players.find((p) => p.id === msg.winnerId)?.name ??
           msg.winnerId;
@@ -193,6 +194,7 @@ export default function GamePage() {
   }, [sendMessage]);
 
   const handleSurrender = useCallback(() => {
+    localStorage.removeItem('conquest_gameId');
     sendMessage({ type: ClientMessageType.SURRENDER });
   }, [sendMessage]);
 
