@@ -536,47 +536,49 @@ describe('endTurn', () => {
     expect(result.currentTurnPlayerId).toBe('p2');
   });
 
-  it('processes income (1 gold per non-tree hex)', () => {
-    const provBefore = gs.provinces.find((p) => p.owner === 'p1')!;
-    const goldBefore = provBefore.gold;
-    const income = provBefore.income;
-    const upkeep = provBefore.upkeep;
+  it('processes income for the NEXT player at start of their turn', () => {
+    const provP2Before = gs.provinces.find((p) => p.owner === 'p2')!;
+    const goldBefore = provP2Before.gold;
+    const income = provP2Before.income;
+    const upkeep = provP2Before.upkeep;
 
     endTurn(gs);
 
-    // After endTurn, provinces get recalculated. Check total gold for p1.
-    const p1Provinces = gs.provinces.filter((p) => p.owner === 'p1');
-    const totalGold = p1Provinces.reduce((s, p) => s + p.gold, 0);
-    // gold = goldBefore + income - upkeep (if non-negative)
+    // After endTurn, p2 is now current player and income/upkeep was applied to p2
+    expect(gs.currentTurnPlayerId).toBe('p2');
+    const p2Provinces = gs.provinces.filter((p) => p.owner === 'p2');
+    const totalGold = p2Provinces.reduce((s, p) => s + p.gold, 0);
     const expected = goldBefore + income - upkeep;
     if (expected >= 0) {
       expect(totalGold).toBe(expected);
     }
   });
 
-  it('kills units when gold goes negative (starvation)', () => {
-    // Set province gold very low so income - upkeep goes negative
-    const prov = gs.provinces.find((p) => p.owner === 'p1')!;
+  it('kills units when gold goes negative (starvation) at start of next turn', () => {
+    // Give p2 an expensive unit (spearman, upkeep=6) but only 3 income hexes and 0 gold
+    // After recalc: income=3, upkeep=6, gold=0+3-6=-3 → starvation
+    const prov = gs.provinces.find((p) => p.owner === 'p2')!;
     prov.gold = 0;
-    prov.income = 0; // force no income
-    prov.upkeep = 10; // high upkeep
+    const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    p2UnitHex.unit = makeUnit('p2', 2, 0, UnitType.SPEARMAN, 'u2-spear');
 
     endTurn(gs);
 
-    // Unit at (0,0) should be dead
-    const hex = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0);
+    // p2's spearman at (2,0) should be dead from starvation
+    const hex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0);
     expect(hex!.unit).toBeNull();
   });
 
   it('sets death markers on starvation', () => {
-    const prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    const prov = gs.provinces.find((p) => p.owner === 'p2')!;
     prov.gold = 0;
-    prov.income = 0;
-    prov.upkeep = 10;
+    const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    p2UnitHex.unit = makeUnit('p2', 2, 0, UnitType.SPEARMAN, 'u2-spear');
 
     endTurn(gs);
 
-    const hex = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0);
+    // p2's unit at (2,0) should have death marker
+    const hex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0);
     expect(hex!.deathMarker).toBe('starvation');
   });
 
@@ -1103,6 +1105,114 @@ describe('Capital System', () => {
     if (p2BigProvinces.length > 0) {
       expect(p2Capitals.length).toBeGreaterThanOrEqual(1);
     }
+  });
+
+  it('merging territories combines gold and removes extra capital', () => {
+    // Two separate provinces for p1, each with a capital.
+    // Connecting them should merge gold and keep the richer capital.
+    const hexes: Hex[] = [
+      // Province A: (0,0) capital, (1,0)
+      makeHex(0, 0, 'p1', {
+        structure: {
+          id: 'cap-a',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 0, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
+      makeHex(1, 0, 'p1'),
+      // Gap at (2,0) — neutral, will be captured to merge
+      makeHex(2, 0, null),
+      // Province B: (3,0), (4,0) capital
+      makeHex(3, 0, 'p1'),
+      makeHex(4, 0, 'p1', {
+        structure: {
+          id: 'cap-b',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 4, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
+      // p2 hexes
+      makeHex(0, 1, 'p2'),
+      makeHex(1, 1, 'p2', {
+        structure: {
+          id: 'cap-p2-m',
+          type: StructureType.CAPITAL,
+          owner: 'p2',
+          hex: { q: 1, r: 1 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
+    ];
+
+    const gs: GameState = {
+      id: 'merge-cap-test',
+      status: GameStatus.IN_PROGRESS,
+      settings: { ...DEFAULT_GAME_SETTINGS },
+      players: [
+        { id: 'p1', name: 'P1', color: '#e74c3c', isAI: false, isConnected: true, isEliminated: false, gold: 0, provinces: [], ready: true },
+        { id: 'p2', name: 'P2', color: '#3498db', isAI: false, isConnected: true, isEliminated: false, gold: 0, provinces: [], ready: true },
+      ],
+      hexes,
+      provinces: [
+        {
+          id: 'prov-a',
+          hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }],
+          owner: 'p1',
+          gold: 30,
+          income: 2,
+          upkeep: 0,
+        },
+        {
+          id: 'prov-b',
+          hexes: [{ q: 3, r: 0 }, { q: 4, r: 0 }],
+          owner: 'p1',
+          gold: 50,
+          income: 2,
+          upkeep: 0,
+        },
+        {
+          id: 'prov-p2-m',
+          hexes: [{ q: 0, r: 1 }, { q: 1, r: 1 }],
+          owner: 'p2',
+          gold: 20,
+          income: 2,
+          upkeep: 0,
+        },
+      ],
+      currentTurnPlayerId: 'p1',
+      turnNumber: 1,
+      turnStartedAt: Date.now(),
+      history: [],
+      winnerId: null,
+      createdAt: Date.now(),
+    };
+
+    // Connect the two provinces by claiming (2,0)
+    const gapHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    gapHex.owner = 'p1';
+
+    recalculateAllProvinces(gs);
+
+    // Should now be a single p1 province
+    const p1Provs = gs.provinces.filter((p) => p.owner === 'p1');
+    expect(p1Provs).toHaveLength(1);
+
+    // Gold should be combined: 30 + 50 = 80
+    expect(p1Provs[0].gold).toBe(80);
+
+    // Only ONE capital should remain
+    const p1Capitals = gs.hexes.filter(
+      (h) => h.structure?.type === StructureType.CAPITAL && h.structure?.owner === 'p1',
+    );
+    expect(p1Capitals).toHaveLength(1);
+
+    // The surviving capital should be the one from the richer province (prov-b at (4,0))
+    expect(p1Capitals[0].coord.q).toBe(4);
+    expect(p1Capitals[0].coord.r).toBe(0);
   });
 
   it('can only buy units in province with capital', () => {

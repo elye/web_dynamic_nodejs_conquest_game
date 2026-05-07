@@ -118,37 +118,57 @@ export function recalculateAllProvinces(gameState: GameState): void {
       (p) => p.owner === playerId,
     );
 
-    // For each new province, check if it contains a hex with a capital
+    // For each new province, find all capitals and sum gold from old provinces
     for (const province of playerProvinces) {
-      let hasCapital = false;
+      // Find all capital hexes in this new province
+      const capitalCoords: HexCoord[] = [];
       for (const coord of province.hexes) {
         const hex = lookup.get(coordKey(coord.q, coord.r));
         if (hex?.structure?.type === StructureType.CAPITAL && hex.structure.owner === playerId) {
-          hasCapital = true;
-          break;
+          capitalCoords.push(coord);
         }
       }
 
-      if (hasCapital) {
-        // This province has the original capital — find which old province
-        // contained this capital hex and inherit ALL its gold
-        let inheritedGold = 0;
+      if (capitalCoords.length > 0) {
+        // Sum gold from ALL old provinces that contributed hexes to this new province
+        let totalGold = 0;
+        const matchedOldProvIds = new Set<string>();
         for (const oldProv of oldPlayerProvinces) {
-          // Check if any of this new province's hexes with a capital were in
-          // this old province
-          for (const coord of province.hexes) {
-            const hex = lookup.get(coordKey(coord.q, coord.r));
-            if (hex?.structure?.type === StructureType.CAPITAL && hex.structure.owner === playerId) {
-              const wasInOld = oldProv.hexes.some(
-                (h) => h.q === coord.q && h.r === coord.r,
-              );
-              if (wasInOld) {
-                inheritedGold += oldProv.gold;
-              }
+          const contributes = province.hexes.some((newCoord) =>
+            oldProv.hexes.some((oldCoord) => oldCoord.q === newCoord.q && oldCoord.r === newCoord.r),
+          );
+          if (contributes && !matchedOldProvIds.has(oldProv.id)) {
+            matchedOldProvIds.add(oldProv.id);
+            totalGold += oldProv.gold;
+          }
+        }
+        province.gold = totalGold;
+
+        // If multiple capitals (from merged provinces), keep the one whose
+        // old province had the most gold and remove the others
+        if (capitalCoords.length > 1) {
+          let bestCapital: HexCoord = capitalCoords[0];
+          let bestGold = -1;
+          for (const capCoord of capitalCoords) {
+            // Find which old province this capital belonged to
+            const oldProv = oldPlayerProvinces.find((op) =>
+              op.hexes.some((h) => h.q === capCoord.q && h.r === capCoord.r),
+            );
+            const oldGold = oldProv?.gold ?? 0;
+            if (oldGold > bestGold) {
+              bestGold = oldGold;
+              bestCapital = capCoord;
+            }
+          }
+          // Remove all capitals except the best one
+          for (const capCoord of capitalCoords) {
+            if (capCoord.q === bestCapital.q && capCoord.r === bestCapital.r) continue;
+            const hex = lookup.get(coordKey(capCoord.q, capCoord.r));
+            if (hex) {
+              hex.structure = null;
             }
           }
         }
-        province.gold = inheritedGold;
       } else {
         // No capital — this is a split fragment. Gets 0 gold and a new capital.
         province.gold = 0;
@@ -159,6 +179,7 @@ export function recalculateAllProvinces(gameState: GameState): void {
           for (const coord of province.hexes) {
             const hex = lookup.get(coordKey(coord.q, coord.r));
             if (hex && !hex.unit && !hex.structure) {
+              hex.hasTree = false;
               hex.structure = {
                 id: randomUUID(),
                 type: StructureType.CAPITAL,
@@ -175,6 +196,7 @@ export function recalculateAllProvinces(gameState: GameState): void {
             for (const coord of province.hexes) {
               const hex = lookup.get(coordKey(coord.q, coord.r));
               if (hex && !hex.structure) {
+                hex.hasTree = false;
                 hex.structure = {
                   id: randomUUID(),
                   type: StructureType.CAPITAL,
@@ -207,4 +229,10 @@ export function recalculateAllProvinces(gameState: GameState): void {
   }
 
   gameState.provinces = newProvinces;
+
+  // Recalculate income/upkeep after capital placement may have cleared trees
+  for (const province of gameState.provinces) {
+    province.income = calculateProvinceIncome(province, gameState.hexes);
+    province.upkeep = calculateProvinceUpkeep(province, gameState.hexes);
+  }
 }

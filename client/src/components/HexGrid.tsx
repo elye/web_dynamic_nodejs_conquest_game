@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import type { Hex, HexCoord } from '@conquest/shared';
-import { TerrainType, UnitType, StructureType } from '@conquest/shared';
+import type { Hex, HexCoord, Province } from '@conquest/shared';
+import { TerrainType, UnitType, StructureType, UNIT_COST } from '@conquest/shared';
 import { hexToPixel, pixelToHex, getHexPath, getHexCorners, getHexNeighbors, DEFAULT_HEX_SIZE } from '../utils/hexUtils';
 import {
   getPlayerColorById,
@@ -13,6 +13,7 @@ import {
 
 interface HexGridProps {
   hexes: Hex[];
+  provinces: Province[];
   selectedHex: HexCoord | null;
   onHexClick: (q: number, r: number) => void;
   currentPlayerId: string | null;
@@ -32,6 +33,7 @@ const MAX_ZOOM = 3;
 
 export default function HexGrid({
   hexes,
+  provinces,
   selectedHex,
   onHexClick,
   currentPlayerId,
@@ -51,6 +53,17 @@ export default function HexGrid({
   // Build a lookup for hexes and valid targets
   const hexMapRef = useRef<Map<string, Hex>>(new Map());
   const validTargetSetRef = useRef<Set<string>>(new Set());
+  const provinceByHexRef = useRef<Map<string, Province>>(new Map());
+
+  useEffect(() => {
+    const map = new Map<string, Province>();
+    for (const prov of provinces) {
+      for (const h of prov.hexes) {
+        map.set(`${h.q},${h.r}`, prov);
+      }
+    }
+    provinceByHexRef.current = map;
+  }, [provinces]);
 
   useEffect(() => {
     const map = new Map<string, Hex>();
@@ -106,6 +119,9 @@ export default function HexGrid({
     ctx.scale(cam.zoom, cam.zoom);
 
     const size = DEFAULT_HEX_SIZE;
+    const isMyTurn = currentTurnPlayerId === currentPlayerId;
+    const pulseAlpha = (Math.sin(Date.now() / 400) + 1) / 2; // 0..1 oscillation
+    const glowRadius = 8 + pulseAlpha * 8; // 8..16 shadow blur
 
     for (const hex of hexes) {
       const { x: cx, y: cy } = hexToPixel(hex.coord.q, hex.coord.r, size);
@@ -153,6 +169,29 @@ export default function HexGrid({
       }
       ctx.stroke(path);
 
+      // Pulse glow for unmoved units and affordable capitals
+      if (isMyTurn && currentPlayerId) {
+        const shouldPulseUnit = hex.unit && hex.unit.owner === currentPlayerId && !hex.unit.hasMoved;
+        const province = provinceByHexRef.current.get(`${hex.coord.q},${hex.coord.r}`);
+        const shouldPulseCapital = !shouldPulseUnit && hex.structure?.type === StructureType.CAPITAL
+          && hex.structure.owner === currentPlayerId
+          && province && province.gold >= UNIT_COST[UnitType.PEASANT];
+
+        if (shouldPulseUnit || shouldPulseCapital) {
+          const color = shouldPulseUnit ? [255, 220, 50] : [50, 220, 100];
+          ctx.save();
+          // Outer glow ring
+          ctx.shadowColor = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${0.6 + pulseAlpha * 0.4})`;
+          ctx.shadowBlur = glowRadius;
+          ctx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${0.5 + pulseAlpha * 0.5})`;
+          ctx.lineWidth = 3 + pulseAlpha * 2;
+          ctx.stroke(path);
+          // Double-stroke for stronger visibility
+          ctx.stroke(path);
+          ctx.restore();
+        }
+      }
+
       // Draw emoji icons LAST so they always appear on top of overlays
       // Tree
       if (hex.hasTree && hex.terrain !== TerrainType.WATER) {
@@ -184,6 +223,26 @@ export default function HexGrid({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(emoji, cx, cy - size * 0.1);
+
+        // Gold badge on current player's capitals
+        if (hex.structure.type === StructureType.CAPITAL && hex.structure.owner === currentPlayerId) {
+          const prov = provinceByHexRef.current.get(`${hex.coord.q},${hex.coord.r}`);
+          if (prov) {
+            const goldText = `${prov.gold}g`;
+            const badgeY = cy + size * 0.3;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.font = `bold ${Math.round(size * 0.22)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const tw = ctx.measureText(goldText).width + 6;
+            const bh = size * 0.26;
+            ctx.beginPath();
+            ctx.roundRect(cx - tw / 2, badgeY - bh / 2, tw, bh, 3);
+            ctx.fill();
+            ctx.fillStyle = '#fbbf24';
+            ctx.fillText(goldText, cx, badgeY);
+          }
+        }
       }
 
       // Unit
@@ -207,20 +266,6 @@ export default function HexGrid({
         ctx.textBaseline = 'middle';
         ctx.fillText(String(hex.unit.strength), cx, badgeY);
 
-        // Moved indicator — show a "✓" badge for current player's units that have moved
-        if (hex.unit.hasMoved && hex.unit.owner === currentPlayerId) {
-          const checkX = cx + size * 0.3;
-          const checkY = cy - size * 0.35;
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-          ctx.beginPath();
-          ctx.arc(checkX, checkY, size * 0.14, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#fff';
-          ctx.font = `bold ${Math.round(size * 0.2)}px sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('✓', checkX, checkY);
-        }
       }
 
       // Death marker (starvation)
@@ -288,7 +333,7 @@ export default function HexGrid({
       ctx.fillStyle = '#fff';
       ctx.fillText(text, 12, height - 14);
     }
-  }, [hexes, selectedHex, hoveredHex, getHexColors, currentTurnPlayerId]);
+  }, [hexes, selectedHex, hoveredHex, getHexColors, currentPlayerId, currentTurnPlayerId, provinces]);
 
   // Animation loop
   useEffect(() => {

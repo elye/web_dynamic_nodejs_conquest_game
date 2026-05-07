@@ -173,6 +173,7 @@ export default function GameBoard({
         <div className="flex-1 relative">
           <HexGrid
             hexes={gameState.hexes}
+            provinces={gameState.provinces}
             selectedHex={selectedHex}
             onHexClick={onHexClick}
             currentPlayerId={currentPlayerId}

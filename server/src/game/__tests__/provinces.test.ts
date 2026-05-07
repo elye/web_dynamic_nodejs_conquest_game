@@ -294,4 +294,65 @@ describe('recalculateAllProvinces', () => {
     expect(prov.upkeep).toBe(UNIT_UPKEEP[UnitType.PEASANT]);
     expect(prov.gold).toBe(50);
   });
+
+  it('auto-placed capital clears trees on that hex', () => {
+    // Province splits: the fragment without a capital has all tree hexes
+    // The new capital should clear the tree on the hex it's placed on
+    const hexes: Hex[] = [
+      // Province A: has capital
+      makeHex(0, 0, 'p1', {
+        structure: {
+          id: 'cap-a',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 0, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+      }),
+      makeHex(1, 0, 'p1'),
+      // Gap: neutral hex splits the territory
+      makeHex(2, 0, null),
+      // Province B: no capital, has trees
+      makeHex(3, 0, 'p1', { hasTree: true }),
+      makeHex(4, 0, 'p1', { hasTree: true }),
+    ];
+    const gameState = {
+      hexes,
+      provinces: [
+        {
+          id: 'old-prov-a',
+          hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }],
+          owner: 'p1',
+          gold: 20,
+          income: 2,
+          upkeep: 0,
+        },
+        {
+          id: 'old-prov-b',
+          hexes: [{ q: 3, r: 0 }, { q: 4, r: 0 }],
+          owner: 'p1',
+          gold: 0,
+          income: 0,
+          upkeep: 0,
+        },
+      ],
+      players: [{ id: 'p1', provinces: ['old-prov-a', 'old-prov-b'] }],
+    } as unknown as GameState;
+
+    recalculateAllProvinces(gameState);
+
+    // Province B should get a new capital
+    const provB = gameState.provinces.find((p) =>
+      p.hexes.some((h) => h.q === 3 && h.r === 0),
+    )!;
+    // Find the hex with the new capital
+    const capitalHex = hexes.find(
+      (h) => (h.coord.q === 3 || h.coord.q === 4) && h.structure?.type === StructureType.CAPITAL,
+    );
+    expect(capitalHex).toBeDefined();
+    // Tree should be cleared on the capital hex
+    expect(capitalHex!.hasTree).toBe(false);
+    // Province B income should reflect the cleared tree (1 income from capital hex)
+    expect(provB.income).toBeGreaterThanOrEqual(1);
+  });
 });

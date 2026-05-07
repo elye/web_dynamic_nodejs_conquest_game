@@ -572,39 +572,6 @@ export function endTurn(gameState: GameState): GameState {
   const currentPlayerId = gameState.currentTurnPlayerId;
   if (!currentPlayerId) throw new Error('No current player');
 
-  // Process income and upkeep for current player's provinces
-  const playerProvinces = gameState.provinces.filter(
-    (p) => p.owner === currentPlayerId,
-  );
-
-  // Clear old death markers
-  for (const hex of gameState.hexes) {
-    if (hex.deathMarker) {
-      delete hex.deathMarker;
-    }
-  }
-
-  for (const province of playerProvinces) {
-    province.gold += province.income;
-    province.gold -= province.upkeep;
-
-    if (province.gold < 0) {
-      // Kill all units in this province
-      const lookup = buildHexLookup(gameState.hexes);
-      for (const coord of province.hexes) {
-        const hex = lookup.get(coordKey(coord.q, coord.r));
-        if (hex?.unit && hex.unit.owner === currentPlayerId) {
-          hex.unit = null;
-          hex.deathMarker = 'starvation';
-        }
-      }
-      province.gold = 0;
-    }
-  }
-
-  // Check if any player lost all territory after starvation
-  checkEliminations(gameState);
-
   // Determine if this is the end of a full round
   const activePlayers = gameState.players.filter((p) => !p.isEliminated);
   const currentIdx = activePlayers.findIndex(
@@ -671,6 +638,40 @@ export function endTurn(gameState: GameState): GameState {
       .filter((p) => p.owner === player.id)
       .map((p) => p.id);
   }
+
+  // Process income and upkeep for the NEW current player's provinces
+  const newCurrentPlayerId = gameState.currentTurnPlayerId;
+  const playerProvinces = gameState.provinces.filter(
+    (p) => p.owner === newCurrentPlayerId,
+  );
+
+  // Clear old death markers
+  for (const hex of gameState.hexes) {
+    if (hex.deathMarker) {
+      delete hex.deathMarker;
+    }
+  }
+
+  for (const province of playerProvinces) {
+    province.gold += province.income;
+    province.gold -= province.upkeep;
+
+    if (province.gold < 0) {
+      // Kill all units in this province
+      const lookup = buildHexLookup(gameState.hexes);
+      for (const coord of province.hexes) {
+        const hex = lookup.get(coordKey(coord.q, coord.r));
+        if (hex?.unit && hex.unit.owner === newCurrentPlayerId) {
+          hex.unit = null;
+          hex.deathMarker = 'starvation';
+        }
+      }
+      province.gold = 0;
+    }
+  }
+
+  // Check if any player lost all territory after starvation
+  checkEliminations(gameState);
 
   // Check win condition
   checkWinCondition(gameState);
