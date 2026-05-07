@@ -355,4 +355,51 @@ describe('recalculateAllProvinces', () => {
     // Province B income should reflect the cleared tree (1 income from capital hex)
     expect(provB.income).toBeGreaterThanOrEqual(1);
   });
+
+  it('single-hex province with capital does NOT inherit gold from old province', () => {
+    // Scenario: province shrinks from 3 hexes to 1 hex.
+    // The surviving hex has the capital. It should NOT keep the old gold.
+    const hexes: Hex[] = [
+      makeHex(0, 0, 'p1', {
+        structure: {
+          id: 'cap1',
+          type: StructureType.CAPITAL,
+          owner: 'p1',
+          hex: { q: 0, r: 0 },
+          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        },
+        unit: makeUnit('p1', 0, 0),
+      }),
+      // The other two hexes were captured by p2
+      makeHex(1, 0, 'p2'),
+      makeHex(0, 1, 'p2'),
+    ];
+
+    const oldProvince: Province = {
+      id: 'old-prov',
+      hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 0, r: 1 }],
+      owner: 'p1',
+      gold: 50,
+      income: 3,
+      upkeep: 2,
+    };
+
+    const gameState = {
+      hexes,
+      provinces: [oldProvince],
+      players: [
+        { id: 'p1', provinces: ['old-prov'], isEliminated: false },
+        { id: 'p2', provinces: [], isEliminated: false },
+      ],
+    } as unknown as GameState;
+
+    recalculateAllProvinces(gameState);
+
+    const p1Province = gameState.provinces.find((p) => p.owner === 'p1');
+    expect(p1Province).toBeDefined();
+    // Single-hex province should get 0 gold, NOT 50 from old province
+    expect(p1Province!.gold).toBe(0);
+    // Capital should be removed from single-hex province
+    expect(hexes[0].structure).toBeNull();
+  });
 });

@@ -118,6 +118,19 @@ export function recalculateAllProvinces(gameState: GameState): void {
       (p) => p.owner === playerId,
     );
 
+    // First: remove capitals from single-hex provinces BEFORE gold distribution
+    // (otherwise they inherit gold from old provinces then lose their capital)
+    for (const province of playerProvinces) {
+      if (province.hexes.length < 2) {
+        for (const coord of province.hexes) {
+          const hex = lookup.get(coordKey(coord.q, coord.r));
+          if (hex?.structure?.type === StructureType.CAPITAL) {
+            hex.structure = null;
+          }
+        }
+      }
+    }
+
     // For each new province, find all capitals and sum gold from old provinces
     for (const province of playerProvinces) {
       // Find all capital hexes in this new province
@@ -207,19 +220,6 @@ export function recalculateAllProvinces(gameState: GameState): void {
                 break;
               }
             }
-          }
-        }
-      }
-    }
-
-    // Remove provinces with fewer than 2 hexes from having a capital
-    // (single-hex provinces don't get capitals)
-    for (const province of playerProvinces) {
-      if (province.hexes.length < 2) {
-        for (const coord of province.hexes) {
-          const hex = lookup.get(coordKey(coord.q, coord.r));
-          if (hex?.structure?.type === StructureType.CAPITAL) {
-            hex.structure = null;
           }
         }
       }
