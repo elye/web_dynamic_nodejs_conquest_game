@@ -12,11 +12,36 @@ An online hex-based territory strategy game.
 
 ```bash
 npm install
-npm run dev        # Run both client and server
-npm run dev:server # Run server only
-npm run dev:client # Run client only
-npm run build      # Build all packages
 ```
+
+### Dev mode (hot-reload, two terminals)
+
+```bash
+# Terminal 1 — server (auto-reloads on changes)
+npm run dev -w server
+
+# Terminal 2 — client (Vite dev server with HMR)
+npm run dev -w client
+```
+
+Access at **http://localhost:5173**
+
+### Production build + start (single server)
+
+```bash
+npm run build -w shared && npm run build -w client && npm run build -w server && npm run start -w server
+```
+
+Access at **http://localhost:3001** (server serves the built client)
+
+### Rebuild after code changes
+
+If you change `shared/` types, rebuild shared first:
+```bash
+npm run build -w shared
+```
+
+If deploying, always rebuild all three in order: `shared → client → server`.
 
 ## Game URLs
 

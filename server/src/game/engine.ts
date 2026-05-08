@@ -266,6 +266,14 @@ export function startGame(gameId: string): GameState {
     player.provinces = playerProvinces.map((p) => p.id);
   }
 
+  // Recalculate provinces after placing capitols (income depends on structures)
+  recalculateAllProvinces(gameState);
+  for (const player of gameState.players) {
+    player.provinces = gameState.provinces
+      .filter((p) => p.owner === player.id)
+      .map((p) => p.id);
+  }
+
   gameStates.set(gameId, gameState);
   gameStore.updateGame(gameId, { status: GameStatus.IN_PROGRESS });
 
