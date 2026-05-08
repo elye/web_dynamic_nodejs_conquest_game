@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   ServerMessageType,
   ClientMessageType,
@@ -33,6 +33,7 @@ export default function GamePage() {
   const validMoves = useGameStore((s) => s.validMoves);
   const selectHex = useGameStore((s) => s.selectHex);
   const clearSelection = useGameStore((s) => s.clearSelection);
+  const optimisticMoveUnit = useGameStore((s) => s.optimisticMoveUnit);
   const turnTimeRemaining = useGameStore((s) => s.turnTimeRemaining);
   const resetGame = useGameStore((s) => s.reset);
 
@@ -127,20 +128,33 @@ export default function GamePage() {
     setTimeout(() => setNotification(null), 4000);
   }
 
-  // Handlers
+  // Handlers — stabilize handleHexClick with refs to avoid recreating on every selection change
+  const selectedHexRef = useRef(selectedHex);
+  const selectedUnitRef = useRef(selectedUnit);
+  const validMovesRef = useRef(validMoves);
+  selectedHexRef.current = selectedHex;
+  selectedUnitRef.current = selectedUnit;
+  validMovesRef.current = validMoves;
+
   const handleHexClick = useCallback(
     (q: number, r: number) => {
+      const sh = selectedHexRef.current;
+      const su = selectedUnitRef.current;
+      const vm = validMovesRef.current;
+
       // If clicking the already-selected hex, deselect
-      if (selectedHex && selectedHex.q === q && selectedHex.r === r) {
+      if (sh && sh.q === q && sh.r === r) {
         clearSelection();
         return;
       }
       // If a unit is selected and this is a valid move target, move
-      if (selectedUnit && validMoves.some((m) => m.q === q && m.r === r)) {
+      if (su && vm.some((m) => m.q === q && m.r === r)) {
+        // Optimistic local update — move the unit immediately in the store
+        optimisticMoveUnit(su.unitId, su.hex, { q, r });
         sendMessage({
           type: ClientMessageType.MOVE_UNIT,
-          unitId: selectedUnit.unitId,
-          from: selectedUnit.hex,
+          unitId: su.unitId,
+          from: su.hex,
           to: { q, r },
         });
         clearSelection();
@@ -148,7 +162,7 @@ export default function GamePage() {
       }
       selectHex(q, r, playerId);
     },
-    [selectedHex, selectedUnit, validMoves, sendMessage, clearSelection, selectHex, playerId],
+    [sendMessage, clearSelection, selectHex, playerId],
   );
 
   const handleMoveUnit = useCallback(

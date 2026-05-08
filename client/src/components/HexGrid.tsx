@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, memo } from 'react';
 import type { Hex, HexCoord, Province } from '@conquest/shared';
 import { TerrainType, UnitType, StructureType, UNIT_COST } from '@conquest/shared';
 import { hexToPixel, pixelToHex, getHexPath, getHexCorners, getHexNeighbors, DEFAULT_HEX_SIZE } from '../utils/hexUtils';
@@ -10,16 +10,12 @@ import {
   WATER_BORDER,
   SELECTED_STROKE,
 } from '../utils/colors';
+import { useGameStore } from '../store/gameStore';
 
 interface HexGridProps {
-  hexes: Hex[];
-  provinces: Province[];
-  selectedHex: HexCoord | null;
   onHexClick: (q: number, r: number) => void;
   currentPlayerId: string | null;
-  currentTurnPlayerId?: string | null;
   playerIds: string[];
-  validTargets?: HexCoord[];
 }
 
 interface Camera {
@@ -64,15 +60,10 @@ function drawCachedEmoji(ctx: CanvasRenderingContext2D, emoji: string, fontSize:
   ctx.drawImage(canvas, cx - size / 2, cy - size / 2, size, size);
 }
 
-export default function HexGrid({
-  hexes,
-  provinces,
-  selectedHex,
+export default memo(function HexGrid({
   onHexClick,
   currentPlayerId,
-  currentTurnPlayerId,
   playerIds,
-  validTargets = [],
 }: HexGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -88,44 +79,16 @@ export default function HexGrid({
   const validTargetSetRef = useRef<Set<string>>(new Set());
   const provinceByHexRef = useRef<Map<string, Province>>(new Map());
 
-  useEffect(() => {
-    const map = new Map<string, Province>();
-    for (const prov of provinces) {
-      for (const h of prov.hexes) {
-        map.set(`${h.q},${h.r}`, prov);
-      }
-    }
-    provinceByHexRef.current = map;
-  }, [provinces]);
-
-  useEffect(() => {
-    const map = new Map<string, Hex>();
-    for (const hex of hexes) {
-      map.set(`${hex.coord.q},${hex.coord.r}`, hex);
-    }
-    hexMapRef.current = map;
-  }, [hexes]);
-
-  useEffect(() => {
-    const set = new Set<string>();
-    for (const t of validTargets) {
-      set.add(`${t.q},${t.r}`);
-    }
-    validTargetSetRef.current = set;
-  }, [validTargets]);
-
-  // Store props in refs so draw() can read them without being recreated
-  const hexesRef = useRef(hexes);
-  const selectedHexRef = useRef(selectedHex);
+  // Store game data in refs (updated by Zustand subscription, not React props)
+  const hexesRef = useRef<Hex[]>([]);
+  const selectedHexRef = useRef<HexCoord | null>(null);
   const currentPlayerIdRef = useRef(currentPlayerId);
-  const currentTurnPlayerIdRef = useRef(currentTurnPlayerId);
+  const currentTurnPlayerIdRef = useRef<string | null>(null);
   const playerIdsRef = useRef(playerIds);
 
-  useEffect(() => { hexesRef.current = hexes; }, [hexes]);
-  useEffect(() => { selectedHexRef.current = selectedHex; }, [selectedHex]);
-  useEffect(() => { currentPlayerIdRef.current = currentPlayerId; }, [currentPlayerId]);
-  useEffect(() => { currentTurnPlayerIdRef.current = currentTurnPlayerId; }, [currentTurnPlayerId]);
-  useEffect(() => { playerIdsRef.current = playerIds; }, [playerIds]);
+  // Keep prop-based refs in sync (these rarely change)
+  currentPlayerIdRef.current = currentPlayerId;
+  playerIdsRef.current = playerIds;
 
   // Convert screen coords to world coords
   const screenToWorld = useCallback((sx: number, sy: number) => {
@@ -408,18 +371,6 @@ export default function HexGrid({
     rafRef.current = requestAnimationFrame(() => draw());
   }, [draw]);
 
-  // Redraw when game state changes (props updated refs above, now trigger draw)
-  useEffect(() => {
-    requestDraw();
-  }, [hexes, selectedHex, currentPlayerId, currentTurnPlayerId, provinces, validTargets, requestDraw]);
-
-  // Pulse animation: redraw at ~7fps when it's the player's turn (for glow effects)
-  useEffect(() => {
-    if (currentTurnPlayerId !== currentPlayerId) return;
-    const id = setInterval(() => requestDraw(), 150);
-    return () => clearInterval(id);
-  }, [currentTurnPlayerId, currentPlayerId, requestDraw]);
-
   // Store draw in a ref so ResizeObserver always uses the latest without re-subscribing
   const drawRef = useRef(draw);
   useEffect(() => { drawRef.current = draw; }, [draw]);
@@ -508,16 +459,92 @@ export default function HexGrid({
     return () => observer.disconnect();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fit camera to land hexes on initial load
+  // ── Zustand subscription: update refs and redraw without React re-renders ──
   useEffect(() => {
-    if (hasAutoFittedRef.current || hexes.length === 0) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    // Helper to rebuild lookup maps
+    const rebuildHexMap = (hexes: Hex[]) => {
+      const map = new Map<string, Hex>();
+      for (const hex of hexes) map.set(`${hex.coord.q},${hex.coord.r}`, hex);
+      hexMapRef.current = map;
+    };
+    const rebuildProvinceMap = (provinces: Province[]) => {
+      const map = new Map<string, Province>();
+      for (const prov of provinces) {
+        for (const h of prov.hexes) map.set(`${h.q},${h.r}`, prov);
+      }
+      provinceByHexRef.current = map;
+    };
+    const rebuildValidTargetSet = (moves: HexCoord[]) => {
+      const set = new Set<string>();
+      for (const t of moves) set.add(`${t.q},${t.r}`);
+      validTargetSetRef.current = set;
+    };
 
-    fitCamera();
-    hasAutoFittedRef.current = true;
+    // Initialize from current state
+    const init = useGameStore.getState();
+    const gs = init.gameState;
+    hexesRef.current = gs?.hexes ?? [];
+    selectedHexRef.current = init.selectedHex;
+    currentTurnPlayerIdRef.current = gs?.currentTurnPlayerId ?? null;
+    rebuildHexMap(hexesRef.current);
+    rebuildProvinceMap(gs?.provinces ?? []);
+    rebuildValidTargetSet(init.validMoves);
+
+    // Auto-fit camera on initial load
+    if (!hasAutoFittedRef.current && hexesRef.current.length > 0) {
+      fitCamera();
+      hasAutoFittedRef.current = true;
+    }
     requestDraw();
-  }, [hexes, requestDraw, fitCamera]); // hexes triggers on initial load
+
+    // Subscribe to changes — updates refs and redraws, no React re-render
+    const unsub = useGameStore.subscribe((state, prevState) => {
+      const gs = state.gameState;
+      const prevGs = prevState.gameState;
+      let needDraw = false;
+
+      if (gs?.hexes !== prevGs?.hexes) {
+        hexesRef.current = gs?.hexes ?? [];
+        rebuildHexMap(hexesRef.current);
+        needDraw = true;
+        // Auto-fit on first hex data
+        if (!hasAutoFittedRef.current && hexesRef.current.length > 0) {
+          fitCamera();
+          hasAutoFittedRef.current = true;
+        }
+      }
+      if (state.selectedHex !== prevState.selectedHex) {
+        selectedHexRef.current = state.selectedHex;
+        needDraw = true;
+      }
+      if (state.validMoves !== prevState.validMoves) {
+        rebuildValidTargetSet(state.validMoves);
+        needDraw = true;
+      }
+      if (gs?.provinces !== prevGs?.provinces) {
+        rebuildProvinceMap(gs?.provinces ?? []);
+        needDraw = true;
+      }
+      if (gs?.currentTurnPlayerId !== prevGs?.currentTurnPlayerId) {
+        currentTurnPlayerIdRef.current = gs?.currentTurnPlayerId ?? null;
+        needDraw = true;
+      }
+
+      if (needDraw) requestDraw();
+    });
+
+    return unsub;
+  }, [requestDraw, fitCamera]);
+
+  // Pulse animation: redraw at ~7fps when it's the player's turn (for glow effects)
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (currentTurnPlayerIdRef.current === currentPlayerIdRef.current) {
+        requestDraw();
+      }
+    }, 150);
+    return () => clearInterval(id);
+  }, [requestDraw]);
 
   // ── Pointer events (unified mouse + touch, no 300ms delay) ──
   const pointerStartRef = useRef({ x: 0, y: 0 });
@@ -710,7 +737,7 @@ export default function HexGrid({
       />
     </div>
   );
-}
+});
 
 // ── Helpers ──
 

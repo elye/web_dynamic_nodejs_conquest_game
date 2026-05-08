@@ -19,6 +19,7 @@ interface GameStore {
 
   setGameState: (state: GameState) => void;
   applyDelta: (delta: Partial<GameState>) => void;
+  optimisticMoveUnit: (unitId: string, from: HexCoord, to: HexCoord) => void;
   selectHex: (q: number, r: number, currentPlayerId: string | null) => void;
   clearSelection: () => void;
   addChatMessage: (msg: ChatMsg) => void;
@@ -141,6 +142,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const current = get().gameState;
     if (!current) return;
     set({ gameState: { ...current, ...delta } });
+  },
+
+  optimisticMoveUnit: (unitId, from, to) => {
+    const current = get().gameState;
+    if (!current) return;
+    const sourceHex = current.hexes.find(
+      (h) => h.coord.q === from.q && h.coord.r === from.r && h.unit?.id === unitId,
+    );
+    if (!sourceHex?.unit) return;
+    const movedUnit = { ...sourceHex.unit, hasMoved: true };
+    const newHexes = current.hexes.map((h) => {
+      if (h.coord.q === from.q && h.coord.r === from.r) {
+        return { ...h, unit: null };
+      }
+      if (h.coord.q === to.q && h.coord.r === to.r) {
+        return { ...h, unit: movedUnit, owner: sourceHex.owner };
+      }
+      return h;
+    });
+    set({ gameState: { ...current, hexes: newHexes } });
   },
 
   selectHex: (q, r, currentPlayerId) => {
