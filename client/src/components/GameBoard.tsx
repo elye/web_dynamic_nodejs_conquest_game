@@ -247,7 +247,7 @@ export default function GameBoard({
           {/* Floating Action Panel — fixed to viewport bottom center */}
           {actionsAvailable && (
             <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 max-w-[calc(100vw-2rem)]">
-              <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-3 py-2 md:px-4 md:py-3 shadow-2xl flex items-center gap-1.5 md:gap-2 select-none overflow-x-auto" onDragStart={(e) => e.preventDefault()}>
+              <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-3 py-2 shadow-2xl flex items-center gap-1.5 select-none overflow-x-auto" onDragStart={(e) => e.preventDefault()}>
                 {/* Turn status */}
                 <span className={`text-xs font-semibold mr-2 ${isMyTurn ? 'text-green-400' : 'text-red-400'}`}>
                   {isMyTurn ? '✓ Your turn' : '✗ Wait'}
@@ -366,10 +366,10 @@ export default function GameBoard({
                     }
                   }}
                   title="Retire Unit (refund half cost)"
-                  className="flex flex-col items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                  className="flex flex-col items-center justify-center w-10 h-10 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
                 >
                   <span className="text-base leading-none">⬇️</span>
-                  <span className="text-[10px] text-slate-300 mt-0.5">Retire</span>
+                  <span className="text-[9px] text-slate-300 mt-0.5">Retire</span>
                 </button>
 
                 <div className="w-px h-8 bg-slate-600 mx-1" />
@@ -407,7 +407,7 @@ export default function GameBoard({
                 <button
                   disabled={!isMyTurn}
                   onClick={onEndTurn}
-                  className="flex items-center gap-1 px-3 py-2 md:px-4 rounded-xl bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ml-1 shrink-0 whitespace-nowrap"
+                  className="flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ml-1 shrink-0 whitespace-nowrap"
                   title="End Turn"
                 >
                   <span>⏭️</span> End Turn
@@ -438,10 +438,10 @@ function ActionButton({
       disabled={disabled}
       onClick={onClick}
       title={title}
-      className="flex flex-col items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+      className="flex flex-col items-center justify-center w-10 h-10 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
     >
-      <span className="text-sm md:text-base leading-none">{emoji}</span>
-      <span className="text-[9px] md:text-[10px] text-slate-300 mt-0.5">{cost}g</span>
+      <span className="text-sm leading-none">{emoji}</span>
+      <span className="text-[9px] text-slate-300 mt-0.5">{cost}g</span>
     </button>
   );
 }

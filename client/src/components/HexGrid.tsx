@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import type { Hex, HexCoord, Province } from '@conquest/shared';
 import { TerrainType, UnitType, StructureType, UNIT_COST } from '@conquest/shared';
 import { hexToPixel, pixelToHex, getHexPath, getHexCorners, getHexNeighbors, DEFAULT_HEX_SIZE } from '../utils/hexUtils';
@@ -48,7 +48,7 @@ export default function HexGrid({
   const isPanningRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef<number>(0);
-  const [hoveredHex, setHoveredHex] = useState<HexCoord | null>(null);
+  const hoveredHexRef = useRef<HexCoord | null>(null);
   const hasAutoFittedRef = useRef(false);
 
   // Build a lookup for hexes and valid targets
@@ -148,10 +148,11 @@ export default function HexGrid({
       const isValidTarget = validTargetSetRef.current.has(
         `${hex.coord.q},${hex.coord.r}`,
       );
+      const hovered = hoveredHexRef.current;
       const isHovered =
-        hoveredHex &&
-        hex.coord.q === hoveredHex.q &&
-        hex.coord.r === hoveredHex.r;
+        hovered &&
+        hex.coord.q === hovered.q &&
+        hex.coord.r === hovered.r;
 
       // Hover overlay (drawn before icons so emojis appear on top)
       if (isHovered && !isSelected) {
@@ -342,6 +343,7 @@ export default function HexGrid({
     ctx.restore();
 
     // Hovered hex tooltip
+    const hoveredHex = hoveredHexRef.current;
     if (hoveredHex) {
       ctx.fillStyle = 'rgba(0,0,0,0.75)';
       const text = `(${hoveredHex.q}, ${hoveredHex.r})`;
@@ -352,7 +354,7 @@ export default function HexGrid({
       ctx.fillStyle = '#fff';
       ctx.fillText(text, 12, height - 14);
     }
-  }, [hexes, selectedHex, hoveredHex, getHexColors, currentPlayerId, currentTurnPlayerId, provinces]);
+  }, [hexes, selectedHex, getHexColors, currentPlayerId, currentTurnPlayerId, provinces]);
 
   // On-demand rendering: schedule a single rAF draw (no continuous loop)
   const requestDraw = useCallback(() => {
@@ -365,34 +367,39 @@ export default function HexGrid({
     requestDraw();
   }, [requestDraw]);
 
-  // Resize canvas to fill container
+  // Pulse animation: redraw at ~20fps when it's the player's turn (for glow effects)
+  useEffect(() => {
+    if (currentTurnPlayerId !== currentPlayerId) return;
+    const id = setInterval(() => requestDraw(), 50);
+    return () => clearInterval(id);
+  }, [currentTurnPlayerId, currentPlayerId, requestDraw]);
+
+  // Store draw in a ref so ResizeObserver always uses the latest without re-subscribing
+  const drawRef = useRef(draw);
+  useEffect(() => { drawRef.current = draw; }, [draw]);
+
+  // Resize canvas to fill container — separate from draw to avoid re-subscribing
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
     if (!container || !canvas) return;
 
-    const observer = new ResizeObserver(() => {
+    const resize = () => {
       const rect = container.getBoundingClientRect();
       canvas.width = rect.width * devicePixelRatio;
       canvas.height = rect.height * devicePixelRatio;
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
-      const ctx = canvas.getContext('2d');
-      if (ctx) ctx.scale(devicePixelRatio, devicePixelRatio);
-      requestDraw();
-    });
+      // Draw synchronously to avoid blank frame after canvas clear
+      drawRef.current();
+    };
+
+    const observer = new ResizeObserver(resize);
     observer.observe(container);
-    // Initial size
-    const rect = container.getBoundingClientRect();
-    canvas.width = rect.width * devicePixelRatio;
-    canvas.height = rect.height * devicePixelRatio;
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
-    const ctx = canvas.getContext('2d');
-    if (ctx) ctx.scale(devicePixelRatio, devicePixelRatio);
+    resize(); // Initial size
 
     return () => observer.disconnect();
-  }, [requestDraw]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fit camera to land hexes on initial load
   useEffect(() => {
@@ -467,10 +474,15 @@ export default function HexGrid({
       const world = screenToWorld(sx, sy);
       const hex = pixelToHex(world.x, world.y);
       const key = `${hex.q},${hex.r}`;
+      const prev = hoveredHexRef.current;
       if (hexMapRef.current.has(key)) {
-        setHoveredHex(hex);
-      } else {
-        setHoveredHex(null);
+        if (!prev || prev.q !== hex.q || prev.r !== hex.r) {
+          hoveredHexRef.current = hex;
+          requestDraw();
+        }
+      } else if (prev) {
+        hoveredHexRef.current = null;
+        requestDraw();
       }
     },
     [screenToWorld, requestDraw],
