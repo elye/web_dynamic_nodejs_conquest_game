@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   ServerMessageType,
   ClientMessageType,
@@ -28,9 +28,6 @@ export default function GamePage() {
   const addChatMessage = useGameStore((s) => s.addChatMessage);
   const setTurnTimer = useGameStore((s) => s.setTurnTimer);
   const decrementTurnTimer = useGameStore((s) => s.decrementTurnTimer);
-  const selectedHex = useGameStore((s) => s.selectedHex);
-  const selectedUnit = useGameStore((s) => s.selectedUnit);
-  const validMoves = useGameStore((s) => s.validMoves);
   const selectHex = useGameStore((s) => s.selectHex);
   const clearSelection = useGameStore((s) => s.clearSelection);
   const optimisticMoveUnit = useGameStore((s) => s.optimisticMoveUnit);
@@ -128,19 +125,15 @@ export default function GamePage() {
     setTimeout(() => setNotification(null), 4000);
   }
 
-  // Handlers — stabilize handleHexClick with refs to avoid recreating on every selection change
-  const selectedHexRef = useRef(selectedHex);
-  const selectedUnitRef = useRef(selectedUnit);
-  const validMovesRef = useRef(validMoves);
-  selectedHexRef.current = selectedHex;
-  selectedUnitRef.current = selectedUnit;
-  validMovesRef.current = validMoves;
+  // Handlers — read selection state directly from Zustand (no React subscription needed)
+  const getSelection = useCallback(() => {
+    const s = useGameStore.getState();
+    return { selectedHex: s.selectedHex, selectedUnit: s.selectedUnit, validMoves: s.validMoves };
+  }, []);
 
   const handleHexClick = useCallback(
     (q: number, r: number) => {
-      const sh = selectedHexRef.current;
-      const su = selectedUnitRef.current;
-      const vm = validMovesRef.current;
+      const { selectedHex: sh, selectedUnit: su, validMoves: vm } = getSelection();
 
       // If clicking the already-selected hex, deselect
       if (sh && sh.q === q && sh.r === r) {
@@ -162,7 +155,7 @@ export default function GamePage() {
       }
       selectHex(q, r, playerId);
     },
-    [sendMessage, clearSelection, selectHex, playerId],
+    [sendMessage, clearSelection, selectHex, playerId, getSelection],
   );
 
   const handleMoveUnit = useCallback(
@@ -248,10 +241,8 @@ export default function GamePage() {
     <div className="relative w-screen h-screen">
       <GameBoard
         gameState={gameState}
-        selectedHex={selectedHex}
         onHexClick={handleHexClick}
         currentPlayerId={playerId}
-        validMoves={validMoves}
         isMyTurn={gameState.currentTurnPlayerId === playerId}
         turnTimeRemaining={turnTimeRemaining}
         onBuyUnit={handleBuyUnit}
