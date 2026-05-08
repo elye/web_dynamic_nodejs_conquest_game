@@ -86,7 +86,7 @@ export default function GameBoard({
   };
 
   return (
-    <div className="flex h-screen w-screen bg-gray-900">
+    <div className="flex h-dvh w-dvw bg-gray-900 overflow-hidden">
       {/* Side panel — slide-in drawer on mobile, static on desktop */}
       {/* Mobile backdrop */}
       {showSidebar && (
@@ -246,172 +246,175 @@ export default function GameBoard({
 
           {/* Floating Action Panel — fixed to viewport bottom center */}
           {actionsAvailable && (
-            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 max-w-[calc(100vw-2rem)]">
-              <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-3 py-2 shadow-2xl flex items-center gap-1.5 select-none overflow-x-auto" onDragStart={(e) => e.preventDefault()}>
-                {/* Turn status */}
-                <span className={`text-xs font-semibold mr-2 ${isMyTurn ? 'text-green-400' : 'text-red-400'}`}>
-                  {isMyTurn ? '✓ Your turn' : '✗ Wait'}
-                </span>
-
-
-                {/* Province gold indicator */}
-                {selectedProvince && (
-                  <span className="text-xs text-amber-300 font-medium mr-2">
-                    💰 {selectedProvince.gold}g
+            <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-30 w-[calc(100vw-1rem)] landscape:max-w-fit">
+              <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-2 py-2 shadow-2xl select-none" onDragStart={(e) => e.preventDefault()}>
+                {/* Row 1: Status + Buy/Build buttons */}
+                <div className="flex items-center gap-1 justify-center flex-wrap">
+                  {/* Turn status + gold */}
+                  <span className={`text-[10px] font-semibold ${isMyTurn ? 'text-green-400' : 'text-red-400'}`}>
+                    {isMyTurn ? '✓' : '✗'}
                   </span>
-                )}
+                  {selectedProvince && (
+                    <span className="text-[10px] text-amber-300 font-medium">
+                      💰{selectedProvince.gold}g
+                    </span>
+                  )}
 
-                {/* Buy/Upgrade unit buttons */}
-                {(() => {
-                  const existingUnit = selectedHexData?.unit;
-                  const existingUnitType = existingUnit?.type as UnitTypeEnum | undefined;
-                  const upgradeOrder = [UnitTypeEnum.PEASANT, UnitTypeEnum.SPEARMAN, UnitTypeEnum.BARON, UnitTypeEnum.KNIGHT];
-                  const currentIdx = existingUnitType ? upgradeOrder.indexOf(existingUnitType) : -1;
-                  const hasStructure = !!selectedHexData?.structure;
-                  const isCapitol = !!selectedHexData?.structure?.isCapitol;
-                  const isBuiltThisTurn = !!selectedHexData?.structure?.builtThisTurn;
-                  // Can't replace capitol or just-built structures
-                  const canReplaceStructure = hasStructure && !isCapitol && !isBuiltThisTurn;
+                  <div className="w-px h-7 bg-slate-600 mx-0.5" />
 
-                  const buttons = [
-                    { emoji: '🧑‍🌾', type: UnitTypeEnum.PEASANT, label: 'Peasant' },
-                    { emoji: '💂', type: UnitTypeEnum.SPEARMAN, label: 'Spearman' },
-                    { emoji: '🤴', type: UnitTypeEnum.BARON, label: 'Baron' },
-                    { emoji: '🐴', type: UnitTypeEnum.KNIGHT, label: 'Knight' },
-                  ];
+                  {/* Buy/Upgrade unit buttons */}
+                  {(() => {
+                    const existingUnit = selectedHexData?.unit;
+                    const existingUnitType = existingUnit?.type as UnitTypeEnum | undefined;
+                    const upgradeOrder = [UnitTypeEnum.PEASANT, UnitTypeEnum.SPEARMAN, UnitTypeEnum.BARON, UnitTypeEnum.KNIGHT];
+                    const currentIdx = existingUnitType ? upgradeOrder.indexOf(existingUnitType) : -1;
+                    const hasStructure = !!selectedHexData?.structure;
+                    const isCapitol = !!selectedHexData?.structure?.isCapitol;
+                    const isBuiltThisTurn = !!selectedHexData?.structure?.builtThisTurn;
+                    const canReplaceStructure = hasStructure && !isCapitol && !isBuiltThisTurn;
 
-                  return buttons.map((b) => {
-                    const targetIdx = upgradeOrder.indexOf(b.type);
-                    // Determine if this button is blocked
-                    const isLowerTier = existingUnit && targetIdx <= currentIdx;
-                    const isBlockedByStructure = !existingUnit && hasStructure && !canReplaceStructure;
+                    const buttons = [
+                      { emoji: '🧑‍🌾', type: UnitTypeEnum.PEASANT, label: 'Peasant' },
+                      { emoji: '💂', type: UnitTypeEnum.SPEARMAN, label: 'Spearman' },
+                      { emoji: '🤴', type: UnitTypeEnum.BARON, label: 'Baron' },
+                      { emoji: '🐴', type: UnitTypeEnum.KNIGHT, label: 'Knight' },
+                    ];
 
-                    const cost = existingUnit && !isLowerTier
-                      ? UNIT_COST[b.type] - UNIT_COST[existingUnitType!]
-                      : UNIT_COST[b.type];
-                    const title = existingUnit && !isLowerTier
-                      ? `Upgrade to ${b.label}`
-                      : canReplaceStructure
-                        ? `Replace structure with ${b.label}`
-                        : `Buy ${b.label}`;
+                    return buttons.map((b) => {
+                      const targetIdx = upgradeOrder.indexOf(b.type);
+                      const isLowerTier = existingUnit && targetIdx <= currentIdx;
+                      const isBlockedByStructure = !existingUnit && hasStructure && !canReplaceStructure;
 
-                    const handleClick = () => {
-                      if (!selectedHex) return;
-                      if (!existingUnit && canReplaceStructure) {
-                        if (!window.confirm(`This will destroy the structure on this hex. Continue?`)) return;
+                      const cost = existingUnit && !isLowerTier
+                        ? UNIT_COST[b.type] - UNIT_COST[existingUnitType!]
+                        : UNIT_COST[b.type];
+                      const title = existingUnit && !isLowerTier
+                        ? `Upgrade to ${b.label}`
+                        : canReplaceStructure
+                          ? `Replace structure with ${b.label}`
+                          : `Buy ${b.label}`;
+
+                      const handleClick = () => {
+                        if (!selectedHex) return;
+                        if (!existingUnit && canReplaceStructure) {
+                          if (!window.confirm(`This will destroy the structure on this hex. Continue?`)) return;
+                        }
+                        onBuyUnit!(b.type, selectedHex);
+                      };
+
+                      return (
+                        <ActionButton
+                          key={b.type}
+                          emoji={b.emoji}
+                          cost={cost}
+                          disabled={!isMyTurn || !hasHex || gold < cost || !!isLowerTier || !!isBlockedByStructure}
+                          onClick={handleClick}
+                          title={title}
+                        />
+                      );
+                    });
+                  })()}
+
+                  <div className="w-px h-7 bg-slate-600 mx-0.5" />
+
+                  {/* Build/Upgrade structure buttons */}
+                  {(() => {
+                    const existingStructure = selectedHexData?.structure;
+                    const existingType = existingStructure?.type as StructureTypeEnum | undefined;
+                    const upgradeOrder = [StructureTypeEnum.FARMHOUSE, StructureTypeEnum.TOWER, StructureTypeEnum.CASTLE];
+                    const currentIdx = existingType ? upgradeOrder.indexOf(existingType) : -1;
+                    const hasUnit = !!selectedHexData?.unit;
+
+                    const buttons = [
+                      { emoji: '🏠', type: StructureTypeEnum.FARMHOUSE, label: 'Farmhouse' },
+                      { emoji: '🏰', type: StructureTypeEnum.TOWER, label: 'Tower' },
+                      { emoji: '🏯', type: StructureTypeEnum.CASTLE, label: 'Castle' },
+                    ];
+
+                    return buttons.map((b) => {
+                      const targetIdx = upgradeOrder.indexOf(b.type);
+                      const isLowerTier = existingStructure && targetIdx <= currentIdx;
+                      const isBlockedByUnit = !existingStructure && hasUnit;
+
+                      const cost = existingStructure && !isLowerTier
+                        ? STRUCTURE_COST[b.type] - STRUCTURE_COST[existingType!]
+                        : STRUCTURE_COST[b.type];
+                      const title = existingStructure && !isLowerTier ? `Upgrade to ${b.label}` : `Build ${b.label}`;
+
+                      return (
+                        <ActionButton
+                          key={b.type}
+                          emoji={b.emoji}
+                          cost={cost}
+                          disabled={!isMyTurn || !hasHex || gold < cost || !!isLowerTier || !!isBlockedByUnit}
+                          onClick={() => selectedHex && onBuildStructure!(b.type, selectedHex)}
+                          title={title}
+                        />
+                      );
+                    });
+                  })()}
+                </div>
+
+                {/* Row 2: Actions (retire, undo, redo, surrender, end turn) */}
+                <div className="flex items-center gap-1 justify-center mt-1">
+                  {/* Retire */}
+                  <button
+                    disabled={!canRetire}
+                    onClick={() => {
+                      if (selectedHexData?.unit && onRetireUnit) {
+                        onRetireUnit(selectedHexData.unit.id);
                       }
-                      onBuyUnit!(b.type, selectedHex);
-                    };
+                    }}
+                    title="Retire Unit"
+                    className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                  >
+                    <span className="text-sm leading-none">⬇️</span>
+                    <span className="text-[8px] text-slate-300">Retire</span>
+                  </button>
 
-                    return (
-                      <ActionButton
-                        key={b.type}
-                        emoji={b.emoji}
-                        cost={cost}
-                        disabled={!isMyTurn || !hasHex || gold < cost || !!isLowerTier || !!isBlockedByStructure}
-                        onClick={handleClick}
-                        title={title}
-                      />
-                    );
-                  });
-                })()}
+                  <div className="w-px h-7 bg-slate-600 mx-0.5" />
 
-                <div className="w-px h-8 bg-slate-600 mx-1" />
+                  {/* Surrender */}
+                  <button
+                    onClick={handleSurrender}
+                    className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-red-900/60 text-red-300 hover:bg-red-800 transition-colors shrink-0"
+                    title="Surrender"
+                  >
+                    <span className="text-sm">🏳️</span>
+                  </button>
 
-                {/* Build/Upgrade structure buttons */}
-                {(() => {
-                  const existingStructure = selectedHexData?.structure;
-                  const existingType = existingStructure?.type as StructureTypeEnum | undefined;
-                  const upgradeOrder = [StructureTypeEnum.FARMHOUSE, StructureTypeEnum.TOWER, StructureTypeEnum.CASTLE];
-                  const currentIdx = existingType ? upgradeOrder.indexOf(existingType) : -1;
-                  const hasUnit = !!selectedHexData?.unit;
+                  {/* Undo */}
+                  <button
+                    disabled={!isMyTurn}
+                    onClick={onUndo}
+                    className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                    title="Undo"
+                  >
+                    <span className="text-sm">↩️</span>
+                  </button>
 
-                  const buttons = [
-                    { emoji: '🏠', type: StructureTypeEnum.FARMHOUSE, label: 'Farmhouse' },
-                    { emoji: '🏰', type: StructureTypeEnum.TOWER, label: 'Tower' },
-                    { emoji: '🏯', type: StructureTypeEnum.CASTLE, label: 'Castle' },
-                  ];
+                  {/* Redo */}
+                  <button
+                    disabled={!isMyTurn}
+                    onClick={onRedo}
+                    className="flex flex-col items-center justify-center w-9 h-9 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                    title="Redo"
+                  >
+                    <span className="text-sm">↪️</span>
+                  </button>
 
-                  return buttons.map((b) => {
-                    const targetIdx = upgradeOrder.indexOf(b.type);
-                    const isLowerTier = existingStructure && targetIdx <= currentIdx;
-                    const isBlockedByUnit = !existingStructure && hasUnit;
+                  <div className="w-px h-7 bg-slate-600 mx-0.5" />
 
-                    const cost = existingStructure && !isLowerTier
-                      ? STRUCTURE_COST[b.type] - STRUCTURE_COST[existingType!]
-                      : STRUCTURE_COST[b.type];
-                    const title = existingStructure && !isLowerTier ? `Upgrade to ${b.label}` : `Build ${b.label}`;
-
-                    return (
-                      <ActionButton
-                        key={b.type}
-                        emoji={b.emoji}
-                        cost={cost}
-                        disabled={!isMyTurn || !hasHex || gold < cost || !!isLowerTier || !!isBlockedByUnit}
-                        onClick={() => selectedHex && onBuildStructure!(b.type, selectedHex)}
-                        title={title}
-                      />
-                    );
-                  });
-                })()}
-
-                <div className="w-px h-8 bg-slate-600 mx-1" />
-
-                {/* Retire unit button */}
-                <button
-                  disabled={!canRetire}
-                  onClick={() => {
-                    if (selectedHexData?.unit && onRetireUnit) {
-                      onRetireUnit(selectedHexData.unit.id);
-                    }
-                  }}
-                  title="Retire Unit (refund half cost)"
-                  className="flex flex-col items-center justify-center w-10 h-10 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-                >
-                  <span className="text-base leading-none">⬇️</span>
-                  <span className="text-[9px] text-slate-300 mt-0.5">Retire</span>
-                </button>
-
-                <div className="w-px h-8 bg-slate-600 mx-1" />
-
-                {/* Surrender */}
-                <button
-                  onClick={handleSurrender}
-                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-red-900/60 text-red-300 hover:bg-red-800 transition-colors shrink-0"
-                  title="Surrender"
-                >
-                  <span className="text-sm">🏳️</span>
-                </button>
-
-                {/* Undo Last Action */}
-                <button
-                  disabled={!isMyTurn}
-                  onClick={onUndo}
-                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-                  title="Undo Last Action"
-                >
-                  <span className="text-sm">↩️</span>
-                </button>
-
-                {/* Redo Action */}
-                <button
-                  disabled={!isMyTurn}
-                  onClick={onRedo}
-                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-                  title="Redo Action"
-                >
-                  <span className="text-sm">↪️</span>
-                </button>
-
-                {/* End turn */}
-                <button
-                  disabled={!isMyTurn}
-                  onClick={onEndTurn}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ml-1 shrink-0 whitespace-nowrap"
-                  title="End Turn"
-                >
-                  <span>⏭️</span> End Turn
-                </button>
+                  {/* End turn */}
+                  <button
+                    disabled={!isMyTurn}
+                    onClick={onEndTurn}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 whitespace-nowrap"
+                    title="End Turn"
+                  >
+                    <span>⏭️</span> End Turn
+                  </button>
+                </div>
               </div>
             </div>
           )}
