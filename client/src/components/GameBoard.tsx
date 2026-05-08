@@ -246,10 +246,12 @@ export default function GameBoard({
 
           {/* Floating Action Panel — fixed to viewport bottom center */}
           {actionsAvailable && (
-            <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-30 w-[calc(100vw-1rem)] landscape:max-w-fit">
+            <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-30 w-[calc(100vw-1rem)] landscape:w-auto landscape:max-w-[calc(100vw-2rem)]">
               <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-2 py-2 shadow-2xl select-none" onDragStart={(e) => e.preventDefault()}>
-                {/* Row 1: Status + Buy/Build buttons */}
-                <div className="flex items-center gap-1 justify-center flex-wrap">
+                {/* Portrait: two rows. Landscape: single row */}
+                <div className="flex flex-col landscape:flex-row landscape:items-center landscape:gap-1 landscape:overflow-x-auto">
+                  {/* Row 1 content: Status + Buy/Build */}
+                  <div className="flex items-center gap-1 justify-center">
                   {/* Turn status + gold */}
                   <span className={`text-[10px] font-semibold ${isMyTurn ? 'text-green-400' : 'text-red-400'}`}>
                     {isMyTurn ? '✓' : '✗'}
@@ -353,10 +355,10 @@ export default function GameBoard({
                       );
                     });
                   })()}
-                </div>
+                  </div> {/* end row 1 inner */}
 
-                {/* Row 2: Actions (retire, undo, redo, surrender, end turn) */}
-                <div className="flex items-center gap-1 justify-center mt-1">
+                {/* Row 2 in portrait / continuation in landscape */}
+                <div className="flex items-center gap-1 justify-center mt-1 landscape:mt-0">
                   {/* Retire */}
                   <button
                     disabled={!canRetire}
@@ -414,6 +416,7 @@ export default function GameBoard({
                   >
                     <span>⏭️</span> End Turn
                   </button>
+                </div>
                 </div>
               </div>
             </div>
