@@ -56,6 +56,7 @@ export interface Structure {
   hex: HexCoord;
   strength: number;
   isCapitol: boolean;
+  builtThisTurn?: boolean;
 }
 
 // ── Province ──

@@ -63,7 +63,7 @@ function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string)
   const structureQueue: HexCoord[] = [];
   for (const n of neighbors) {
     const target = hexMap.get(`${n.q},${n.r}`);
-    if (target && target.owner === currentPlayerId && target.structure) {
+    if (target && target.owner === currentPlayerId && target.structure && !target.structure.builtThisTurn) {
       const key = `${n.q},${n.r}`;
       if (!structureSet.has(key)) {
         structureSet.add(key);
@@ -71,7 +71,7 @@ function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string)
       }
     }
   }
-  // BFS through connected structures
+  // BFS through connected structures (only pre-existing, not built this turn)
   while (structureQueue.length > 0) {
     const current = structureQueue.shift()!;
     const sNeighbors = getHexNeighbors(current.q, current.r);
@@ -79,7 +79,7 @@ function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string)
       const key = `${sn.q},${sn.r}`;
       if (structureSet.has(key)) continue;
       const snHex = hexMap.get(key);
-      if (snHex && snHex.owner === currentPlayerId && snHex.structure) {
+      if (snHex && snHex.owner === currentPlayerId && snHex.structure && !snHex.structure.builtThisTurn) {
         structureSet.add(key);
         structureQueue.push(sn);
       }
@@ -114,6 +114,8 @@ function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string)
     if (resultSet.has(key)) continue;
     const target = hexMap.get(key);
     if (!target || target.terrain === TerrainType.WATER) continue;
+    // Can't land on own structures (even newly built ones)
+    if (target.owner === currentPlayerId && target.structure) continue;
     if (target.owner !== null && target.owner !== currentPlayerId) {
       const defense = getHexDefense(target, hexMap);
       if (unitStrength <= defense) continue;

@@ -89,12 +89,12 @@ function getValidMoves(gameState: GameState, playerId: string): UnitMove[] {
     const neighbors = getHexNeighbors(sourceHex.coord.q, sourceHex.coord.r);
     const moveSet = new Set<string>();
 
-    // BFS through connected structures for jump-through
+    // BFS through connected structures for jump-through (only pre-existing structures)
     const structureSet = new Set<string>();
     const structureQueue: HexCoord[] = [];
     for (const nc of neighbors) {
       const targetHex = lookup.get(coordKey(nc.q, nc.r));
-      if (targetHex && targetHex.owner === playerId && targetHex.structure) {
+      if (targetHex && targetHex.owner === playerId && targetHex.structure && !targetHex.structure.builtThisTurn) {
         const key = coordKey(nc.q, nc.r);
         structureSet.add(key);
         structureQueue.push(nc);
@@ -106,7 +106,7 @@ function getValidMoves(gameState: GameState, playerId: string): UnitMove[] {
         const key = coordKey(cn.q, cn.r);
         if (structureSet.has(key)) continue;
         const h = lookup.get(key);
-        if (h && h.owner === playerId && h.structure) {
+        if (h && h.owner === playerId && h.structure && !h.structure.builtThisTurn) {
           structureSet.add(key);
           structureQueue.push(cn);
         }

@@ -335,11 +335,12 @@ export function moveUnit(
     const sourceNeighbors = getHexNeighbors(sourceHex.coord.q, sourceHex.coord.r);
 
     // BFS through connected structures starting from source's adjacent structures
+    // Only structures NOT built this turn can be traversed
     const structureSet = new Set<string>();
     const queue: HexCoord[] = [];
     for (const sn of sourceNeighbors) {
       const h = getHex(gameState.hexes, sn);
-      if (h?.structure && h.owner === playerId) {
+      if (h?.structure && h.owner === playerId && !h.structure.builtThisTurn) {
         const key = `${sn.q},${sn.r}`;
         structureSet.add(key);
         queue.push(sn);
@@ -351,7 +352,7 @@ export function moveUnit(
         const key = `${cn.q},${cn.r}`;
         if (structureSet.has(key)) continue;
         const h = getHex(gameState.hexes, cn);
-        if (h?.structure && h.owner === playerId) {
+        if (h?.structure && h.owner === playerId && !h.structure.builtThisTurn) {
           structureSet.add(key);
           queue.push(cn);
         }
@@ -661,6 +662,7 @@ export function buildStructure(
     hex,
     strength: STRUCTURE_STRENGTH[structureType],
     isCapitol: false,
+    builtThisTurn: true,
   };
 
   return gameState;
@@ -825,10 +827,13 @@ export function endTurn(gameState: GameState): GameState {
 
   gameState.turnStartedAt = Date.now();
 
-  // Reset hasMoved for the next player's units
+  // Reset hasMoved for the next player's units and builtThisTurn for their structures
   for (const hex of gameState.hexes) {
     if (hex.unit && hex.unit.owner === nextPlayer.id) {
       hex.unit.hasMoved = false;
+    }
+    if (hex.structure && hex.structure.owner === nextPlayer.id && hex.structure.builtThisTurn) {
+      hex.structure.builtThisTurn = false;
     }
   }
 
@@ -914,6 +919,9 @@ export function endTurn(gameState: GameState): GameState {
       for (const hex of gameState.hexes) {
         if (hex.unit && hex.unit.owner === skipPlayer.id) {
           hex.unit.hasMoved = false;
+        }
+        if (hex.structure && hex.structure.owner === skipPlayer.id && hex.structure.builtThisTurn) {
+          hex.structure.builtThisTurn = false;
         }
       }
 
