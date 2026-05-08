@@ -495,7 +495,7 @@ describe('buyUnit', () => {
     );
   });
 
-  it("can't buy on hex with structure", () => {
+  it('replaces structure when buying unit on hex with structure', () => {
     const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
     hex.structure = {
       id: 'struct-1',
@@ -505,9 +505,11 @@ describe('buyUnit', () => {
       strength: STRUCTURE_STRENGTH[StructureType.TOWER],
       isCapitol: false,
     };
-    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 })).toThrow(
-      'already has a structure',
-    );
+    const result = buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
+    const placedHex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    expect(placedHex.structure).toBeNull();
+    expect(placedHex.unit).not.toBeNull();
+    expect(placedHex.unit!.type).toBe(UnitType.PEASANT);
   });
 
   it("can't buy when it's not your turn", () => {
@@ -532,23 +534,45 @@ describe('buyUnit', () => {
     expect(placedHex!.hasTree).toBe(false);
   });
 
-  it('merges with existing unit on hex', () => {
-    // Place a peasant first, then buy another peasant on same hex
+  it('upgrades existing unit when buying higher tier', () => {
+    // Place a peasant, then upgrade to spearman
     const hex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
     hex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'existing-unit');
 
-    const result = buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 });
-    const mergedHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
-    expect(mergedHex!.unit!.type).toBe(UnitType.SPEARMAN);
+    const result = buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: 1, r: 0 });
+    const upgradedHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
+    expect(upgradedHex!.unit!.type).toBe(UnitType.SPEARMAN);
+  });
+
+  it('charges cost difference when upgrading unit', () => {
+    const hex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    hex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'existing-unit');
+    let prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    prov.gold = 50;
+    const goldBefore = prov.gold;
+
+    buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: 1, r: 0 });
+    prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    const expectedCost = UNIT_COST[UnitType.SPEARMAN] - UNIT_COST[UnitType.PEASANT];
+    expect(prov.gold).toBe(goldBefore - expectedCost);
+  });
+
+  it("can't downgrade a unit", () => {
+    const hex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    hex.unit = makeUnit('p1', 1, 0, UnitType.SPEARMAN, 'existing-unit');
+
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 })).toThrow(
+      'higher-tier',
+    );
   });
 
   it("can't promote a unit that has already moved", () => {
-    // Place a peasant that has already moved, then try to buy on same hex
+    // Place a peasant that has already moved, then try to upgrade
     const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
     hex.unit = makeUnit('p1', -1, 0, UnitType.PEASANT, 'moved-unit');
     hex.unit.hasMoved = true;
 
-    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 })).toThrow(
+    expect(() => buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: -1, r: 0 })).toThrow(
       'already acted this turn',
     );
   });
@@ -564,12 +588,12 @@ describe('buyUnit', () => {
     );
   });
 
-  it("can't move a unit that was just promoted via buy", () => {
-    // Place a peasant, promote it by buying another peasant on same hex
+  it("can't move a unit that was just upgraded via buy", () => {
+    // Place a peasant, upgrade it to spearman
     const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
     hex.unit = makeUnit('p1', -1, 0, UnitType.PEASANT, 'to-promote');
 
-    buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
+    buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: -1, r: 0 });
     expect(hex.unit!.type).toBe(UnitType.SPEARMAN);
     expect(hex.unit!.hasMoved).toBe(true);
 
@@ -578,8 +602,8 @@ describe('buyUnit', () => {
     );
   });
 
-  it("can't promote a unit that was merged via move", () => {
-    // Merge two peasants by moving, then try to buy-promote the merged unit
+  it("can't promote a unit that has already moved via merge", () => {
+    // Merge two peasants by moving, then try to buy-upgrade the merged unit
     const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
     midHex.structure = null;
     midHex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'merge-target');
@@ -588,7 +612,7 @@ describe('buyUnit', () => {
     expect(midHex.unit!.type).toBe(UnitType.SPEARMAN);
     expect(midHex.unit!.hasMoved).toBe(true);
 
-    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 })).toThrow(
+    expect(() => buyUnit(gs, 'p1', UnitType.BARON, { q: 1, r: 0 })).toThrow(
       'already acted this turn',
     );
   });

@@ -69,14 +69,12 @@ function getNextPlayer(gameState: GameState): Player | undefined {
   return activePlayers[nextIdx];
 }
 
-const UNIT_MERGE_MAP: Record<string, UnitType> = {
-  [`${UnitType.PEASANT}+${UnitType.PEASANT}`]: UnitType.SPEARMAN,
-  [`${UnitType.SPEARMAN}+${UnitType.PEASANT}`]: UnitType.BARON,
-  [`${UnitType.PEASANT}+${UnitType.SPEARMAN}`]: UnitType.BARON,
-  [`${UnitType.BARON}+${UnitType.PEASANT}`]: UnitType.KNIGHT,
-  [`${UnitType.PEASANT}+${UnitType.BARON}`]: UnitType.KNIGHT,
-  [`${UnitType.SPEARMAN}+${UnitType.SPEARMAN}`]: UnitType.KNIGHT,
-};
+const UNIT_UPGRADE_ORDER: UnitType[] = [
+  UnitType.PEASANT,
+  UnitType.SPEARMAN,
+  UnitType.BARON,
+  UnitType.KNIGHT,
+];
 
 const TREE_SPREAD_CHANCE = 0.1;
 
@@ -393,8 +391,9 @@ export function moveUnit(
     if (targetHex.structure) {
       throw new Error('Cannot move onto a hex with a structure');
     }
-    const mergeKey = `${targetHex.unit.type}+${unit.type}`;
-    const mergedType = UNIT_MERGE_MAP[mergeKey];
+    // Merge: combined cost determines the resulting unit type
+    const combinedCost = UNIT_COST[targetHex.unit.type] + UNIT_COST[unit.type];
+    const mergedType = UNIT_UPGRADE_ORDER.find((t) => UNIT_COST[t] === combinedCost);
     if (!mergedType) {
       throw new Error('Cannot merge these units');
     }
@@ -538,21 +537,21 @@ export function buyUnit(
     throw new Error('Province has no capital — cannot buy units');
   }
 
-  // Handle merging: if hex has a unit, try to merge
+  // Handle upgrade: if hex has a unit, upgrade directly to target type
   if (targetHex.unit) {
     if (targetHex.unit.hasMoved) {
       throw new Error('Unit has already acted this turn — cannot promote');
     }
-    const mergeKey = `${targetHex.unit.type}+${unitType}`;
-    const mergedType = UNIT_MERGE_MAP[mergeKey];
-    if (!mergedType) {
-      throw new Error('Cannot place unit here: hex already has a unit that cannot be merged');
+    const currentIdx = UNIT_UPGRADE_ORDER.indexOf(targetHex.unit.type);
+    const targetIdx = UNIT_UPGRADE_ORDER.indexOf(unitType);
+    if (targetIdx <= currentIdx) {
+      throw new Error('Can only upgrade to a higher-tier unit');
     }
 
     const province = findProvinceForHex(gameState.provinces, hex, playerId);
     if (!province) throw new Error('Hex does not belong to any province');
 
-    const cost = UNIT_COST[unitType];
+    const cost = UNIT_COST[unitType] - UNIT_COST[targetHex.unit.type];
     if (province.gold < cost) {
       throw new Error(`Insufficient gold: need ${cost}, have ${province.gold}`);
     }
@@ -560,9 +559,9 @@ export function buyUnit(
     province.gold -= cost;
 
     // Upgrade the existing unit
-    targetHex.unit.type = mergedType;
-    targetHex.unit.strength = UNIT_STRENGTH[mergedType];
-    targetHex.unit.upkeep = UNIT_UPKEEP[mergedType];
+    targetHex.unit.type = unitType;
+    targetHex.unit.strength = UNIT_STRENGTH[unitType];
+    targetHex.unit.upkeep = UNIT_UPKEEP[unitType];
     targetHex.unit.hasMoved = true;
 
     // Recalculate province upkeep
@@ -577,8 +576,9 @@ export function buyUnit(
   }
 
   // No existing unit — normal placement
+  // If hex has a structure, destroy it to make room for the unit
   if (targetHex.structure) {
-    throw new Error('Hex already has a structure');
+    targetHex.structure = null;
   }
 
   const province = findProvinceForHex(gameState.provinces, hex, playerId);

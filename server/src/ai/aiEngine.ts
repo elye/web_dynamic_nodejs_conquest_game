@@ -466,6 +466,7 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
   }
 
   // Build farmhouses on interior hexes for income boost
+  // Farmhouses provide x2 income, prevent tree growth, and enable jump-through movement
   for (const province of provinces) {
     if (province.gold < STRUCTURE_COST[StructureType.FARMHOUSE]) continue;
     // Only build farmhouse if province has decent income headroom
@@ -483,13 +484,19 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
         });
       });
 
-    if (interiorHexes.length > 0) {
+    // Build multiple farmhouses if affordable (they pay for themselves quickly)
+    for (const hex of interiorHexes) {
+      const prov = gameState.provinces.find((p) => p.owner === playerId && p.hexes.some(
+        (c) => c.q === hex.coord.q && c.r === hex.coord.r,
+      ));
+      if (!prov || prov.gold < STRUCTURE_COST[StructureType.FARMHOUSE]) break;
+      if (prov.gold - STRUCTURE_COST[StructureType.FARMHOUSE] < prov.upkeep) break;
       try {
-        buildStructure(gameState, playerId, StructureType.FARMHOUSE, interiorHexes[0].coord);
+        buildStructure(gameState, playerId, StructureType.FARMHOUSE, hex.coord);
         broadcastDelta(gameState);
         await randomDelay();
       } catch {
-        // Skip
+        break;
       }
     }
   }
@@ -815,15 +822,16 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
     }
   }
 
-  // 5. Merge units for tougher opponents (buy onto existing units)
+  // 5. Upgrade units facing strong opponents (buy higher tier directly)
+  const UNIT_UPGRADE_ORDER = [UnitType.PEASANT, UnitType.SPEARMAN, UnitType.BARON, UnitType.KNIGHT];
   const playerUnits = getPlayerUnits(gameState, playerId);
   for (const { unit, hex } of playerUnits) {
-    if (unit.type === UnitType.KNIGHT) continue; // Already max
+    if (unit.type === UnitType.KNIGHT || unit.hasMoved) continue; // Already max or already acted
 
     const province = findProvinceForHex(gameState.provinces, hex.coord, playerId);
     if (!province) continue;
 
-    // Only merge on frontline hexes facing strong enemies
+    // Only upgrade on frontline hexes facing strong enemies
     const neighbors = getHexNeighbors(hex.coord.q, hex.coord.r);
     const facesStrongEnemy = neighbors.some((nc) => {
       const n = lookup.get(coordKey(nc.q, nc.r));
@@ -832,18 +840,20 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
 
     if (!facesStrongEnemy) continue;
 
-    // Try to merge with a Peasant
-    if (province.gold >= UNIT_COST[UnitType.PEASANT]) {
-      const newUpkeep = province.upkeep - unit.upkeep; // Old unit upkeep removed after merge
-      const mergedUpkeep = UNIT_UPKEEP[unit.type === UnitType.PEASANT ? UnitType.SPEARMAN : unit.type === UnitType.SPEARMAN ? UnitType.BARON : UnitType.KNIGHT];
-      if (province.gold - UNIT_COST[UnitType.PEASANT] + province.income - newUpkeep - mergedUpkeep >= 0) {
-        try {
-          buyUnit(gameState, playerId, UnitType.PEASANT, hex.coord);
-          broadcastDelta(gameState);
-          await randomDelay();
-        } catch {
-          // Skip
-        }
+    // Find the next tier up
+    const currentIdx = UNIT_UPGRADE_ORDER.indexOf(unit.type);
+    const nextType = UNIT_UPGRADE_ORDER[currentIdx + 1];
+    if (!nextType) continue;
+
+    const upgradeCost = UNIT_COST[nextType] - UNIT_COST[unit.type];
+    const newUpkeep = province.upkeep - unit.upkeep + UNIT_UPKEEP[nextType];
+    if (province.gold >= upgradeCost && province.gold - upgradeCost + province.income - newUpkeep >= 0) {
+      try {
+        buyUnit(gameState, playerId, nextType, hex.coord);
+        broadcastDelta(gameState);
+        await randomDelay();
+      } catch {
+        // Skip
       }
     }
   }

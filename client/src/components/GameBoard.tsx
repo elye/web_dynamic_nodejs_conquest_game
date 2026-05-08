@@ -215,35 +215,56 @@ export default function GameBoard({
                   </span>
                 )}
 
-                {/* Buy unit buttons */}
-                <ActionButton
-                  emoji="🧑‍🌾"
-                  cost={UNIT_COST[UnitTypeEnum.PEASANT]}
-                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.PEASANT]}
-                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.PEASANT, selectedHex)}
-                  title="Buy Peasant"
-                />
-                <ActionButton
-                  emoji="💂"
-                  cost={UNIT_COST[UnitTypeEnum.SPEARMAN]}
-                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.SPEARMAN]}
-                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.SPEARMAN, selectedHex)}
-                  title="Buy Spearman"
-                />
-                <ActionButton
-                  emoji="🤴"
-                  cost={UNIT_COST[UnitTypeEnum.BARON]}
-                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.BARON]}
-                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.BARON, selectedHex)}
-                  title="Buy Baron"
-                />
-                <ActionButton
-                  emoji="🐴"
-                  cost={UNIT_COST[UnitTypeEnum.KNIGHT]}
-                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.KNIGHT]}
-                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.KNIGHT, selectedHex)}
-                  title="Buy Knight"
-                />
+                {/* Buy/Upgrade unit buttons */}
+                {(() => {
+                  const existingUnit = selectedHexData?.unit;
+                  const existingUnitType = existingUnit?.type as UnitTypeEnum | undefined;
+                  const upgradeOrder = [UnitTypeEnum.PEASANT, UnitTypeEnum.SPEARMAN, UnitTypeEnum.BARON, UnitTypeEnum.KNIGHT];
+                  const currentIdx = existingUnitType ? upgradeOrder.indexOf(existingUnitType) : -1;
+                  const hasStructure = !!selectedHexData?.structure;
+
+                  const buttons = [
+                    { emoji: '🧑‍🌾', type: UnitTypeEnum.PEASANT, label: 'Peasant' },
+                    { emoji: '💂', type: UnitTypeEnum.SPEARMAN, label: 'Spearman' },
+                    { emoji: '🤴', type: UnitTypeEnum.BARON, label: 'Baron' },
+                    { emoji: '🐴', type: UnitTypeEnum.KNIGHT, label: 'Knight' },
+                  ];
+
+                  return buttons.map((b) => {
+                    const targetIdx = upgradeOrder.indexOf(b.type);
+                    // If hex has a unit, only show higher-tier upgrade options
+                    if (existingUnit && targetIdx <= currentIdx) return null;
+
+                    const cost = existingUnit
+                      ? UNIT_COST[b.type] - UNIT_COST[existingUnitType!]
+                      : UNIT_COST[b.type];
+                    const title = existingUnit
+                      ? `Upgrade to ${b.label}`
+                      : hasStructure
+                        ? `Replace structure with ${b.label}`
+                        : `Buy ${b.label}`;
+
+                    const handleClick = () => {
+                      if (!selectedHex) return;
+                      // Confirm when replacing a structure
+                      if (!existingUnit && hasStructure) {
+                        if (!window.confirm(`This will destroy the structure on this hex. Continue?`)) return;
+                      }
+                      onBuyUnit!(b.type, selectedHex);
+                    };
+
+                    return (
+                      <ActionButton
+                        key={b.type}
+                        emoji={b.emoji}
+                        cost={cost}
+                        disabled={!isMyTurn || !hasHex || gold < cost}
+                        onClick={handleClick}
+                        title={title}
+                      />
+                    );
+                  });
+                })()}
 
                 <div className="w-px h-8 bg-slate-600 mx-1" />
 

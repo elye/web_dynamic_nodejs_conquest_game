@@ -53,6 +53,42 @@ Games use short 6-character alphanumeric IDs and hash-based routing:
 
 Refreshing the page or navigating back to the same URL will reconnect the player to their game, as long as it's still active.
 
+## Gameplay
+
+### Units
+| Unit | Str | Cost | Upkeep |
+|------|-----|------|--------|
+| 🧑‍🌾 Peasant | 1 | 10g | 2g |
+| 💂 Spearman | 2 | 20g | 6g |
+| 🤴 Baron | 3 | 30g | 18g |
+| 🐴 Knight | 4 | 40g | 54g |
+
+- **Upgrade units** by clicking a higher-tier button — costs the difference (e.g. Peasant → Spearman = 10g).
+- **Merge units** by moving one onto another — combined cost determines the result.
+- **Retire** a unit (⬇️) to remove it and reclaim half its cost.
+
+### Structures
+| Structure | Cost | Defense | Special |
+|-----------|------|---------|---------|
+| 🏠 Farmhouse | 10g | 0 | x2 income on hex |
+| 🏰 Tower | 20g | +1 | Defense to hex & neighbors |
+| 🏯 Castle | 30g | +2 | Defense to hex & neighbors |
+
+- **Upgrade structures** by clicking a higher-tier button — costs the difference.
+- Units **jump through** connected friendly structures to reach tiles on the other side.
+- Structures built this turn (⏳) cannot be jumped through yet.
+- You can **replace a structure with a unit** (with confirmation) if you need the hex.
+
+### Economy
+- Each hex = 1 gold/turn. Farmhouses give x2 income on their hex.
+- Trees 🌲 block income. Move a unit onto them to chop.
+- If a province goes bankrupt, all its units starve.
+
+### Capitols ⭐
+- Every province (2+ hexes) auto-gets a capitol (Farmhouse with ⭐).
+- You need a capitol to buy units.
+- Capturing an enemy capitol steals its gold.
+
 ## Session & Reconnection
 
 - Players authenticate as guests with a name. Auth tokens are stored in `localStorage` and persist across page reloads.

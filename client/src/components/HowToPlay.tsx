@@ -76,7 +76,8 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
                 <tr><td className="py-1">🐴 Knight</td><td>4</td><td>40g</td><td>54g</td></tr>
               </tbody>
             </table>
-            <p className="mt-1 text-xs text-gray-400">Merge two units on the same hex to upgrade (e.g. Peasant + Peasant = Spearman).</p>
+            <p className="mt-1 text-xs text-gray-400">Click a higher-tier unit button to upgrade an existing unit for the cost difference (e.g. upgrade Peasant → Spearman for 10g).</p>
+            <p className="mt-1 text-xs text-gray-400">Move a unit onto a friendly unit to merge them (combined cost determines result).</p>
             <p className="mt-1 text-xs text-gray-400">⬇️ <strong>Retire</strong> a unit to remove it and reclaim half its cost (5g / 10g / 15g / 20g). Also reduces upkeep.</p>
           </section>
 
@@ -105,7 +106,9 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
               <li>🏰 <strong>Tower</strong> (20g) — +1 defense to hex and neighbors</li>
               <li>🏯 <strong>Castle</strong> (30g) — +2 defense to hex and neighbors</li>
             </ul>
-            <p className="mt-1 text-xs text-gray-400">Units can jump through friendly structures to reach tiles on the other side.</p>
+            <p className="mt-1 text-xs text-gray-400">Upgrade structures by clicking a higher-tier button for the cost difference.</p>
+            <p className="mt-1 text-xs text-gray-400">Structures built this turn show ⏳ — units cannot jump through them yet.</p>
+            <p className="mt-1 text-xs text-gray-400">You can replace a structure with a unit (confirmation required).</p>
           </section>
 
           {/* Tips */}
