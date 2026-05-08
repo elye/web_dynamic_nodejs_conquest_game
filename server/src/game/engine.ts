@@ -771,6 +771,10 @@ export function retireUnit(
 
   const unit = unitHex.unit;
 
+  if (unit.hasMoved) {
+    throw new Error('Unit has already acted this turn — cannot retire');
+  }
+
   // Find the province containing this hex
   const province = findProvinceForHex(gameState.provinces, unitHex.coord, playerId);
   if (!province) throw new Error('Unit hex does not belong to any province');

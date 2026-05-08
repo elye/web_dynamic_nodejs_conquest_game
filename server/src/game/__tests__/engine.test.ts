@@ -2167,7 +2167,7 @@ describe('retireUnit', () => {
     }
   });
 
-  it('can retire a unit that has already moved', () => {
+  it("can't retire a unit that has already moved", () => {
     const unitHex = findP1UnitHex();
     const unitId = unitHex.unit!.id;
 
@@ -2198,12 +2198,10 @@ describe('retireUnit', () => {
     )!;
     expect(movedUnit.unit!.hasMoved).toBe(true);
 
-    // Retire should still work
-    retireUnit(movedGs, 'p1', unitId);
-    const retiredHex = movedGs.hexes.find(
-      (h) => h.coord.q === targetCoord!.q && h.coord.r === targetCoord!.r,
-    )!;
-    expect(retiredHex.unit).toBeNull();
+    // Retire should be blocked
+    expect(() => retireUnit(movedGs, 'p1', unitId)).toThrow(
+      'already acted this turn',
+    );
   });
 });
 

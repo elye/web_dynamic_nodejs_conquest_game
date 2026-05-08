@@ -65,7 +65,8 @@ export default function GameBoard({
   const canRetire =
     isMyTurn &&
     selectedHexData?.unit != null &&
-    selectedHexData.unit.owner === currentPlayerId;
+    selectedHexData.unit.owner === currentPlayerId &&
+    !selectedHexData.unit.hasMoved;
 
   const handleSurrender = () => {
     if (window.confirm('Are you sure you want to surrender?')) {
