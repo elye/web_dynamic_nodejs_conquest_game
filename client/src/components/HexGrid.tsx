@@ -354,15 +354,16 @@ export default function HexGrid({
     }
   }, [hexes, selectedHex, hoveredHex, getHexColors, currentPlayerId, currentTurnPlayerId, provinces]);
 
-  // Animation loop
-  useEffect(() => {
-    const loop = () => {
-      draw();
-      rafRef.current = requestAnimationFrame(loop);
-    };
-    rafRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafRef.current);
+  // On-demand rendering: schedule a single rAF draw (no continuous loop)
+  const requestDraw = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => draw());
   }, [draw]);
+
+  // Redraw when game state or draw function changes
+  useEffect(() => {
+    requestDraw();
+  }, [requestDraw]);
 
   // Resize canvas to fill container
   useEffect(() => {
@@ -378,6 +379,7 @@ export default function HexGrid({
       canvas.style.height = `${rect.height}px`;
       const ctx = canvas.getContext('2d');
       if (ctx) ctx.scale(devicePixelRatio, devicePixelRatio);
+      requestDraw();
     });
     observer.observe(container);
     // Initial size
@@ -390,7 +392,7 @@ export default function HexGrid({
     if (ctx) ctx.scale(devicePixelRatio, devicePixelRatio);
 
     return () => observer.disconnect();
-  }, []);
+  }, [requestDraw]);
 
   // Auto-fit camera to land hexes on initial load
   useEffect(() => {
@@ -430,7 +432,8 @@ export default function HexGrid({
     cam.y = canvasH / 2 - gridCenterY * zoom;
 
     hasAutoFittedRef.current = true;
-  }, [hexes]);
+    requestDraw();
+  }, [hexes, requestDraw]);
 
   // Mouse handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -454,6 +457,7 @@ export default function HexGrid({
         cameraRef.current.x += dx;
         cameraRef.current.y += dy;
         lastMouseRef.current = { x: e.clientX, y: e.clientY };
+        requestDraw();
       }
 
       // Hover detection
@@ -469,7 +473,7 @@ export default function HexGrid({
         setHoveredHex(null);
       }
     },
-    [screenToWorld],
+    [screenToWorld, requestDraw],
   );
 
   const handleMouseUp = useCallback(
@@ -510,7 +514,8 @@ export default function HexGrid({
     cam.x = mx - ((mx - cam.x) * newZoom) / oldZoom;
     cam.y = my - ((my - cam.y) * newZoom) / oldZoom;
     cam.zoom = newZoom;
-  }, []);
+    requestDraw();
+  }, [requestDraw]);
 
   // Touch handlers for pinch-to-zoom
   const touchesRef = useRef<React.Touch[]>([]);
@@ -561,7 +566,8 @@ export default function HexGrid({
       cam.y = my - ((my - cam.y) * newZoom) / oldZoom;
       cam.zoom = newZoom;
     }
-  }, []);
+    requestDraw();
+  }, [requestDraw]);
 
   const handleTouchEnd = useCallback(
     (e: React.TouchEvent) => {
