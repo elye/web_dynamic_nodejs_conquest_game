@@ -60,6 +60,28 @@ function drawCachedEmoji(ctx: CanvasRenderingContext2D, emoji: string, fontSize:
   ctx.drawImage(canvas, cx - size / 2, cy - size / 2, size, size);
 }
 
+// ── Hex geometry cache: pre-compute pixel coords, Path2D, and corners ──
+// Hex positions are fixed for a given (q,r,size), so we compute trig once.
+interface HexGeometry {
+  cx: number;
+  cy: number;
+  path: Path2D;
+  corners: { x: number; y: number }[];
+}
+const hexGeoCache = new Map<string, HexGeometry>();
+
+function getHexGeometry(q: number, r: number, size: number): HexGeometry {
+  const key = `${q},${r}`;
+  let geo = hexGeoCache.get(key);
+  if (geo) return geo;
+  const { x: cx, y: cy } = hexToPixel(q, r, size);
+  const path = getHexPath(cx, cy, size);
+  const corners = getHexCorners(cx, cy, size);
+  geo = { cx, cy, path, corners };
+  hexGeoCache.set(key, geo);
+  return geo;
+}
+
 export default memo(function HexGrid({
   onHexClick,
   currentPlayerId,
@@ -152,13 +174,12 @@ export default memo(function HexGrid({
     const glowRadius = 8 + pulseAlpha * 8; // 8..16 shadow blur
 
     for (const hex of hexes) {
-      const { x: cx, y: cy } = hexToPixel(hex.coord.q, hex.coord.r, size);
+      const geo = getHexGeometry(hex.coord.q, hex.coord.r, size);
+      const { cx, cy, path } = geo;
 
       // Viewport culling — skip hexes entirely outside the visible area
       if (cx < viewLeft - margin || cx > viewRight + margin ||
           cy < viewTop - margin || cy > viewBottom + margin) continue;
-
-      const path = getHexPath(cx, cy, size);
 
       // Determine colors
       const colors = getHexColors(hex);
@@ -203,8 +224,8 @@ export default memo(function HexGrid({
       }
       ctx.stroke(path);
 
-      // Pulse glow for unmoved units and affordable capitals
-      if (isMyTurn && currentPlayerId) {
+      // Pulse glow for unmoved units and affordable capitals (skip during drag — shadowBlur is expensive)
+      if (isMyTurn && currentPlayerId && !isDraggingRef.current) {
         const shouldPulseUnit = hex.unit && hex.unit.owner === currentPlayerId && !hex.unit.hasMoved;
         const province = provinceByHexRef.current.get(`${hex.coord.q},${hex.coord.r}`);
         const shouldPulseCapital = !shouldPulseUnit && hex.structure?.isCapitol
@@ -322,13 +343,15 @@ export default memo(function HexGrid({
         { dq: 1, dr: -1 },   // edge 5→0: northeast
       ];
 
+      // Batch all border edges into a single path (one stroke call instead of many)
+      ctx.beginPath();
       for (const hex of hexes) {
         if (hex.owner !== currentTurnPlayer) continue;
-        const { x: cx, y: cy } = hexToPixel(hex.coord.q, hex.coord.r, size);
+        const geo = getHexGeometry(hex.coord.q, hex.coord.r, size);
+        const { cx, cy, corners } = geo;
         // Cull off-screen hexes for border drawing too
         if (cx < viewLeft - margin || cx > viewRight + margin ||
             cy < viewTop - margin || cy > viewBottom + margin) continue;
-        const corners = getHexCorners(cx, cy, size);
 
         for (let i = 0; i < 6; i++) {
           const dir = NEIGHBOR_DIRS[i];
@@ -336,17 +359,16 @@ export default memo(function HexGrid({
           const nr = hex.coord.r + dir.dr;
           const neighbor = hexMapRef.current.get(`${nq},${nr}`);
 
-          // Draw edge if neighbor doesn't exist or isn't owned by same player
+          // Add edge if neighbor doesn't exist or isn't owned by same player
           if (!neighbor || neighbor.owner !== currentTurnPlayer) {
             const c1 = corners[i];
             const c2 = corners[(i + 1) % 6];
-            ctx.beginPath();
             ctx.moveTo(c1.x, c1.y);
             ctx.lineTo(c2.x, c2.y);
-            ctx.stroke();
           }
         }
       }
+      ctx.stroke();
     }
 
     ctx.restore();
