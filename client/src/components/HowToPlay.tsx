@@ -77,7 +77,7 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
               </tbody>
             </table>
             <p className="mt-1 text-xs text-gray-400">Merge two units on the same hex to upgrade (e.g. Peasant + Peasant = Spearman).</p>
-            <p className="mt-1 text-xs text-gray-400">🏠 <strong>Retire</strong> a unit to remove it and reclaim half its cost (5g / 10g / 15g / 20g). Also reduces upkeep.</p>
+            <p className="mt-1 text-xs text-gray-400">⬇️ <strong>Retire</strong> a unit to remove it and reclaim half its cost (5g / 10g / 15g / 20g). Also reduces upkeep.</p>
           </section>
 
           {/* Combat */}

@@ -249,14 +249,14 @@ export default function GameBoard({
 
                 {/* Build structure buttons */}
                 <ActionButton
-                  emoji="�"
+                  emoji="🏠"
                   cost={STRUCTURE_COST[StructureTypeEnum.FARMHOUSE]}
                   disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.FARMHOUSE]}
                   onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.FARMHOUSE, selectedHex)}
                   title="Build Farmhouse"
                 />
                 <ActionButton
-                  emoji="�🏰"
+                  emoji="🏰"
                   cost={STRUCTURE_COST[StructureTypeEnum.TOWER]}
                   disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.TOWER]}
                   onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.TOWER, selectedHex)}
@@ -283,7 +283,7 @@ export default function GameBoard({
                   title="Retire Unit (refund half cost)"
                   className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
-                  <span className="text-base leading-none">🏠</span>
+                  <span className="text-base leading-none">⬇️</span>
                   <span className="text-[10px] text-slate-300 mt-0.5">Retire</span>
                 </button>
 

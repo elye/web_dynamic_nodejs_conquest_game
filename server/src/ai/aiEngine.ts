@@ -20,6 +20,7 @@ import {
   moveUnit,
   buyUnit,
   buildStructure,
+  upgradeStructure,
   retireUnit,
   endTurn,
 } from '../game/engine.js';
@@ -461,6 +462,70 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
       break;
     } catch {
       // Skip
+    }
+  }
+
+  // Build farmhouses on interior hexes for income boost
+  for (const province of provinces) {
+    if (province.gold < STRUCTURE_COST[StructureType.FARMHOUSE]) continue;
+    // Only build farmhouse if province has decent income headroom
+    if (province.gold - STRUCTURE_COST[StructureType.FARMHOUSE] < province.upkeep) continue;
+
+    const interiorHexes = province.hexes
+      .map((c) => gameState.hexes.find((h) => h.coord.q === c.q && h.coord.r === c.r))
+      .filter((h): h is Hex => !!h && !h.unit && !h.structure)
+      .filter((h) => {
+        // Interior = all land neighbors are owned by same player
+        const neighbors = getHexNeighbors(h.coord.q, h.coord.r);
+        return neighbors.every((nc) => {
+          const n = lookup.get(coordKey(nc.q, nc.r));
+          return !n || n.terrain === TerrainType.WATER || n.owner === playerId;
+        });
+      });
+
+    if (interiorHexes.length > 0) {
+      try {
+        buildStructure(gameState, playerId, StructureType.FARMHOUSE, interiorHexes[0].coord);
+        broadcastDelta(gameState);
+        await randomDelay();
+      } catch {
+        // Skip
+      }
+    }
+  }
+
+  // Upgrade existing structures if we have surplus gold
+  for (const province of provinces) {
+    if (province.gold < STRUCTURE_COST[StructureType.CASTLE] - STRUCTURE_COST[StructureType.TOWER]) continue;
+
+    const upgradeable = province.hexes
+      .map((c) => gameState.hexes.find((h) => h.coord.q === c.q && h.coord.r === c.r))
+      .filter((h): h is Hex => !!h && !!h.structure && h.structure.owner === playerId)
+      .filter((h) => h.structure!.type !== StructureType.CASTLE);
+
+    for (const hex of upgradeable) {
+      const currentType = hex.structure!.type;
+      const nextType = currentType === StructureType.FARMHOUSE ? StructureType.TOWER : StructureType.CASTLE;
+      const cost = STRUCTURE_COST[nextType] - STRUCTURE_COST[currentType];
+      if (province.gold < cost) continue;
+      // Only upgrade border structures (not interior farmhouses — those are for income)
+      if (currentType === StructureType.FARMHOUSE && !hex.structure!.isCapitol) {
+        // Check if it's on the border
+        const neighbors = getHexNeighbors(hex.coord.q, hex.coord.r);
+        const isBorder = neighbors.some((nc) => {
+          const n = lookup.get(coordKey(nc.q, nc.r));
+          return n && n.terrain !== TerrainType.WATER && n.owner !== playerId;
+        });
+        if (!isBorder) continue;
+      }
+      try {
+        upgradeStructure(gameState, playerId, nextType, hex.coord);
+        broadcastDelta(gameState);
+        await randomDelay();
+        break;
+      } catch {
+        // Skip
+      }
     }
   }
 
