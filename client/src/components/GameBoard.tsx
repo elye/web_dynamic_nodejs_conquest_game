@@ -247,28 +247,44 @@ export default function GameBoard({
 
                 <div className="w-px h-8 bg-slate-600 mx-1" />
 
-                {/* Build structure buttons */}
-                <ActionButton
-                  emoji="🏠"
-                  cost={STRUCTURE_COST[StructureTypeEnum.FARMHOUSE]}
-                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.FARMHOUSE]}
-                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.FARMHOUSE, selectedHex)}
-                  title="Build Farmhouse"
-                />
-                <ActionButton
-                  emoji="🏰"
-                  cost={STRUCTURE_COST[StructureTypeEnum.TOWER]}
-                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.TOWER]}
-                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.TOWER, selectedHex)}
-                  title="Build Tower"
-                />
-                <ActionButton
-                  emoji="🏯"
-                  cost={STRUCTURE_COST[StructureTypeEnum.CASTLE]}
-                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.CASTLE]}
-                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.CASTLE, selectedHex)}
-                  title="Build Castle"
-                />
+                {/* Build/Upgrade structure buttons */}
+                {(() => {
+                  const existingStructure = selectedHexData?.structure;
+                  const existingType = existingStructure?.type as StructureTypeEnum | undefined;
+                  const upgradeOrder = [StructureTypeEnum.FARMHOUSE, StructureTypeEnum.TOWER, StructureTypeEnum.CASTLE];
+                  const currentIdx = existingType ? upgradeOrder.indexOf(existingType) : -1;
+                  const hasUnit = !!selectedHexData?.unit;
+
+                  const buttons = [
+                    { emoji: '🏠', type: StructureTypeEnum.FARMHOUSE, label: 'Farmhouse' },
+                    { emoji: '🏰', type: StructureTypeEnum.TOWER, label: 'Tower' },
+                    { emoji: '🏯', type: StructureTypeEnum.CASTLE, label: 'Castle' },
+                  ];
+
+                  return buttons.map((b) => {
+                    const targetIdx = upgradeOrder.indexOf(b.type);
+                    // Can't build same or lower tier when hex has a structure
+                    if (existingStructure && targetIdx <= currentIdx) return null;
+                    // Can't build on hex with unit (unless upgrading existing structure)
+                    if (!existingStructure && hasUnit) return null;
+
+                    const cost = existingStructure
+                      ? STRUCTURE_COST[b.type] - STRUCTURE_COST[existingType!]
+                      : STRUCTURE_COST[b.type];
+                    const title = existingStructure ? `Upgrade to ${b.label}` : `Build ${b.label}`;
+
+                    return (
+                      <ActionButton
+                        key={b.type}
+                        emoji={b.emoji}
+                        cost={cost}
+                        disabled={!isMyTurn || !hasHex || gold < cost}
+                        onClick={() => selectedHex && onBuildStructure!(b.type, selectedHex)}
+                        title={title}
+                      />
+                    );
+                  });
+                })()}
 
                 <div className="w-px h-8 bg-slate-600 mx-1" />
 

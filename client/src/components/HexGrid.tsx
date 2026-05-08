@@ -231,6 +231,12 @@ export default function HexGrid({
         ctx.textBaseline = 'middle';
         ctx.fillText(emoji, cx, cy - size * 0.1);
 
+        // Hourglass for newly built structures (can't jump through yet)
+        if (hex.structure.builtThisTurn && hex.structure.owner === currentPlayerId) {
+          ctx.font = `${Math.round(size * 0.25)}px serif`;
+          ctx.fillText('⏳', cx - size * 0.3, cy - size * 0.35);
+        }
+
         // Star icon for capitols
         if (hex.structure.isCapitol) {
           ctx.font = `${Math.round(size * 0.3)}px serif`;

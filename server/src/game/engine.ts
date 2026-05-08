@@ -665,6 +665,14 @@ export function buildStructure(
     builtThisTurn: true,
   };
 
+  // Recalculate provinces (income changes with farmhouse bonus)
+  recalculateAllProvinces(gameState);
+  for (const player of gameState.players) {
+    player.provinces = gameState.provinces
+      .filter((p) => p.owner === player.id)
+      .map((p) => p.id);
+  }
+
   return gameState;
 }
 
@@ -719,6 +727,14 @@ export function upgradeStructure(
   // Upgrade in place, preserving isCapitol flag and id
   targetHex.structure.type = targetType;
   targetHex.structure.strength = STRUCTURE_STRENGTH[targetType];
+
+  // Recalculate provinces (income changes when farmhouse is upgraded)
+  recalculateAllProvinces(gameState);
+  for (const player of gameState.players) {
+    player.provinces = gameState.provinces
+      .filter((p) => p.owner === player.id)
+      .map((p) => p.id);
+  }
 
   return gameState;
 }

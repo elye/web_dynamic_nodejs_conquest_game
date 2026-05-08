@@ -5,6 +5,7 @@ import {
   moveUnit,
   buyUnit,
   buildStructure,
+  upgradeStructure,
   retireUnit,
   endTurn,
   surrender,
@@ -2276,5 +2277,106 @@ describe('no-capital elimination', () => {
     expect(gs.players.find((p) => p.id === 'p2')!.isEliminated).toBe(true);
     expect(gs.status).toBe(GameStatus.FINISHED);
     expect(gs.winnerId).toBe('p1');
+  });
+});
+
+// ── upgradeStructure ──
+
+describe('upgradeStructure', () => {
+  let gs: GameState;
+
+  beforeEach(() => {
+    gs = createTestGameState('upgrade-test');
+  });
+
+  it('upgrades farmhouse to tower', () => {
+    // Build a farmhouse on (-1,0) first
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+
+    const result = upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+    const hex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    expect(hex.structure!.type).toBe(StructureType.TOWER);
+    expect(hex.structure!.strength).toBe(STRUCTURE_STRENGTH[StructureType.TOWER]);
+  });
+
+  it('upgrades farmhouse to castle', () => {
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+
+    const result = upgradeStructure(gs, 'p1', StructureType.CASTLE, { q: -1, r: 0 });
+    const hex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    expect(hex.structure!.type).toBe(StructureType.CASTLE);
+    expect(hex.structure!.strength).toBe(STRUCTURE_STRENGTH[StructureType.CASTLE]);
+  });
+
+  it('charges cost difference (not full price)', () => {
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    let prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    prov.gold = 50;
+    const goldBefore = prov.gold;
+
+    upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+
+    prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    const expectedCost = STRUCTURE_COST[StructureType.TOWER] - STRUCTURE_COST[StructureType.FARMHOUSE];
+    expect(prov.gold).toBe(goldBefore - expectedCost);
+  });
+
+  it('preserves isCapitol when upgrading capitol', () => {
+    // Capitol is at (1,0) as a farmhouse
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+
+    const result = upgradeStructure(gs, 'p1', StructureType.TOWER, { q: 1, r: 0 });
+    const hex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    expect(hex.structure!.type).toBe(StructureType.TOWER);
+    expect(hex.structure!.isCapitol).toBe(true);
+  });
+
+  it('recalculates income after upgrade (farmhouse loses x2 bonus)', () => {
+    // Build farmhouse on (-1,0) — income should increase
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    let prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    const incomeWithFarmhouse = prov.income;
+
+    prov.gold = 50;
+    upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+
+    // Re-fetch province after recalculation
+    prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    // After upgrading farmhouse to tower, income should decrease by 1
+    // (farmhouse gives x2 = 2 for that hex, tower gives 1)
+    expect(prov.income).toBe(incomeWithFarmhouse - 1);
+  });
+
+  it('buildStructure recalculates income (farmhouse adds x2 bonus)', () => {
+    const incomeBefore = gs.provinces.find((p) => p.owner === 'p1')!.income;
+
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+
+    // Re-fetch province after recalculation
+    const prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    // Farmhouse gives x2 income for that hex (1 → 2), so +1 income
+    expect(prov.income).toBe(incomeBefore + 1);
+  });
+
+  it("can't downgrade a structure", () => {
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+    upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+    expect(() =>
+      upgradeStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 }),
+    ).toThrow();
+  });
+
+  it("can't upgrade with insufficient gold", () => {
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 0;
+
+    expect(() =>
+      upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 }),
+    ).toThrow('Insufficient gold');
   });
 });
