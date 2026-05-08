@@ -532,14 +532,19 @@ export default function HexGrid({
   // Touch handlers for pinch-to-zoom
   const touchesRef = useRef<React.Touch[]>([]);
   const pinchDistRef = useRef<number>(0);
+  const touchStartRef = useRef({ x: 0, y: 0 }); // initial touch position for tap detection
+  const TAP_THRESHOLD = 12; // pixels — movement under this counts as a tap
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     const touches = Array.from(e.touches);
     touchesRef.current = touches;
     if (touches.length === 1) {
-      lastMouseRef.current = { x: touches[0].clientX, y: touches[0].clientY };
+      const pos = { x: touches[0].clientX, y: touches[0].clientY };
+      lastMouseRef.current = pos;
+      touchStartRef.current = pos;
       isDraggingRef.current = false;
     } else if (touches.length === 2) {
+      isDraggingRef.current = true; // multi-touch always counts as drag
       const dx = touches[1].clientX - touches[0].clientX;
       const dy = touches[1].clientY - touches[0].clientY;
       pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
@@ -550,11 +555,22 @@ export default function HexGrid({
     e.preventDefault();
     const touches = Array.from(e.touches);
     if (touches.length === 1) {
-      const dx = touches[0].clientX - lastMouseRef.current.x;
-      const dy = touches[0].clientY - lastMouseRef.current.y;
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDraggingRef.current = true;
-      cameraRef.current.x += dx;
-      cameraRef.current.y += dy;
+      const dx = touches[0].clientX - touchStartRef.current.x;
+      const dy = touches[0].clientY - touchStartRef.current.y;
+      const distFromStart = Math.sqrt(dx * dx + dy * dy);
+
+      if (!isDraggingRef.current && distFromStart > TAP_THRESHOLD) {
+        isDraggingRef.current = true;
+      }
+
+      // Only pan the map once drag threshold is exceeded
+      if (isDraggingRef.current) {
+        const moveDx = touches[0].clientX - lastMouseRef.current.x;
+        const moveDy = touches[0].clientY - lastMouseRef.current.y;
+        cameraRef.current.x += moveDx;
+        cameraRef.current.y += moveDy;
+        requestDraw();
+      }
       lastMouseRef.current = { x: touches[0].clientX, y: touches[0].clientY };
     } else if (touches.length === 2) {
       const dx = touches[1].clientX - touches[0].clientX;
@@ -577,8 +593,8 @@ export default function HexGrid({
       cam.x = mx - ((mx - cam.x) * newZoom) / oldZoom;
       cam.y = my - ((my - cam.y) * newZoom) / oldZoom;
       cam.zoom = newZoom;
+      requestDraw();
     }
-    requestDraw();
   }, [requestDraw]);
 
   const handleTouchEnd = useCallback(
