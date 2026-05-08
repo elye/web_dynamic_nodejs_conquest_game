@@ -5,6 +5,7 @@ import {
   UNIT_COST,
   STRUCTURE_COST,
 } from '@conquest/shared';
+import { useState } from 'react';
 import { getPlayerColor } from '../utils/colors';
 import HexGrid from './HexGrid';
 
@@ -74,10 +75,22 @@ export default function GameBoard({
     }
   };
 
+  const [showSidebar, setShowSidebar] = useState(false);
+
   return (
     <div className="flex h-screen w-screen bg-gray-900">
-      {/* Side panel */}
-      <div className="w-64 shrink-0 bg-gray-800 border-r border-gray-700 flex flex-col">
+      {/* Side panel — hidden on mobile, toggleable */}
+      <div className={`${showSidebar ? 'fixed inset-0 z-40 flex' : 'hidden'} md:relative md:flex md:z-auto`}>
+        {/* Backdrop for mobile */}
+        <div className="md:hidden fixed inset-0 bg-black/50" onClick={() => setShowSidebar(false)} />
+        <div className="relative z-50 w-64 shrink-0 bg-gray-800 border-r border-gray-700 flex flex-col max-h-screen overflow-y-auto">
+          {/* Close button on mobile */}
+          <button
+            onClick={() => setShowSidebar(false)}
+            className="md:hidden absolute top-2 right-2 text-gray-400 hover:text-white text-xl z-10"
+          >
+            ✕
+          </button>
         <div className="p-4 border-b border-gray-700">
           <h2 className="text-lg font-bold text-white">Players</h2>
         </div>
@@ -165,12 +178,21 @@ export default function GameBoard({
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Map area */}
       <div className="flex-1 flex flex-col min-h-0 relative">
         {/* Turn & connection header */}
         <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center px-4 justify-between">
+          {/* Sidebar toggle for mobile */}
+          <button
+            onClick={() => setShowSidebar(true)}
+            className="md:hidden text-gray-300 hover:text-white mr-2 text-lg"
+            title="Show players & info"
+          >
+            ☰
+          </button>
           <span className="text-sm text-gray-300">
             {gameState.currentTurnPlayerId === currentPlayerId
               ? 'Your turn'
@@ -201,8 +223,8 @@ export default function GameBoard({
 
           {/* Floating Action Panel — fixed to viewport bottom center */}
           {actionsAvailable && (
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
-              <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-4 py-3 shadow-2xl flex items-center gap-2 select-none" onDragStart={(e) => e.preventDefault()}>
+            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 max-w-[calc(100vw-2rem)]">
+              <div className="bg-slate-800/90 backdrop-blur border border-slate-600 rounded-2xl px-3 py-2 md:px-4 md:py-3 shadow-2xl flex items-center gap-1.5 md:gap-2 select-none overflow-x-auto" onDragStart={(e) => e.preventDefault()}>
                 {/* Turn status */}
                 <span className={`text-xs font-semibold mr-2 ${isMyTurn ? 'text-green-400' : 'text-red-400'}`}>
                   {isMyTurn ? '✓ Your turn' : '✗ Wait'}
@@ -321,7 +343,7 @@ export default function GameBoard({
                     }
                   }}
                   title="Retire Unit (refund half cost)"
-                  className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="flex flex-col items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
                 >
                   <span className="text-base leading-none">⬇️</span>
                   <span className="text-[10px] text-slate-300 mt-0.5">Retire</span>
@@ -332,7 +354,7 @@ export default function GameBoard({
                 {/* Surrender */}
                 <button
                   onClick={handleSurrender}
-                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-red-900/60 text-red-300 hover:bg-red-800 transition-colors"
+                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-red-900/60 text-red-300 hover:bg-red-800 transition-colors shrink-0"
                   title="Surrender"
                 >
                   <span className="text-sm">🏳️</span>
@@ -342,7 +364,7 @@ export default function GameBoard({
                 <button
                   disabled={!isMyTurn}
                   onClick={onUndo}
-                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
                   title="Undo Last Action"
                 >
                   <span className="text-sm">↩️</span>
@@ -352,7 +374,7 @@ export default function GameBoard({
                 <button
                   disabled={!isMyTurn}
                   onClick={onRedo}
-                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-amber-900/60 text-amber-300 hover:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
                   title="Redo Action"
                 >
                   <span className="text-sm">↪️</span>
@@ -362,7 +384,7 @@ export default function GameBoard({
                 <button
                   disabled={!isMyTurn}
                   onClick={onEndTurn}
-                  className="flex items-center gap-1 px-4 py-2 rounded-xl bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ml-1"
+                  className="flex items-center gap-1 px-3 py-2 md:px-4 rounded-xl bg-indigo-600 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ml-1 shrink-0 whitespace-nowrap"
                   title="End Turn"
                 >
                   <span>⏭️</span> End Turn
@@ -393,10 +415,10 @@ function ActionButton({
       disabled={disabled}
       onClick={onClick}
       title={title}
-      className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      className="flex flex-col items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
     >
-      <span className="text-base leading-none">{emoji}</span>
-      <span className="text-[10px] text-slate-300 mt-0.5">{cost}g</span>
+      <span className="text-sm md:text-base leading-none">{emoji}</span>
+      <span className="text-[9px] md:text-[10px] text-slate-300 mt-0.5">{cost}g</span>
     </button>
   );
 }

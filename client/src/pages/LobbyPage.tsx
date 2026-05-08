@@ -33,21 +33,21 @@ export default function LobbyPage() {
     <div className="min-h-screen bg-slate-900 text-white">
       {/* Header */}
       <header className="border-b border-slate-700 bg-slate-800/50">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold tracking-tight">Conquest</h1>
-          <div className="flex items-center gap-4">
+        <div className="max-w-5xl mx-auto px-4 md:px-6 py-3 md:py-4 flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight">Conquest</h1>
+          <div className="flex items-center gap-2 md:gap-4 flex-wrap">
             <button
               onClick={() => setShowHowToPlay(true)}
-              className="px-3 py-1.5 rounded-lg bg-slate-700 text-gray-300 hover:bg-slate-600 transition-colors text-sm"
+              className="px-2 py-1 md:px-3 md:py-1.5 rounded-lg bg-slate-700 text-gray-300 hover:bg-slate-600 transition-colors text-xs md:text-sm"
             >
               ❓ How to Play
             </button>
-            <span className="text-sm text-gray-400">
-              Playing as <span className="text-white font-medium">{playerName}</span>
+            <span className="text-xs md:text-sm text-gray-400">
+              <span className="text-white font-medium">{playerName}</span>
             </span>
             <button
               onClick={() => useAuthStore.getState().logout()}
-              className="px-3 py-1.5 rounded-lg bg-slate-700 text-gray-300 hover:bg-slate-600 transition-colors text-sm"
+              className="px-2 py-1 md:px-3 md:py-1.5 rounded-lg bg-slate-700 text-gray-300 hover:bg-slate-600 transition-colors text-xs md:text-sm"
             >
               Change Name
             </button>
@@ -56,10 +56,10 @@ export default function LobbyPage() {
       </header>
 
       {/* Content */}
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
+      <main className="max-w-5xl mx-auto px-4 md:px-6 py-4 md:py-8">
+        <div className="flex flex-wrap items-center justify-between mb-4 md:mb-6 gap-2">
           <h2 className="text-lg font-semibold">Game Rooms</h2>
-          <div className="flex gap-3">
+          <div className="flex gap-2 md:gap-3 flex-wrap">
             <button
               onClick={() => fetchGames()}
               disabled={isLoading}
