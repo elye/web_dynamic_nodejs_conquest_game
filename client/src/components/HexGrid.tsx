@@ -31,6 +31,39 @@ interface Camera {
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 
+// ── Emoji cache: pre-render emojis to offscreen canvases for fast drawImage ──
+const emojiCache = new Map<string, HTMLCanvasElement>();
+
+function getEmojiCanvas(emoji: string, fontSize: number): HTMLCanvasElement {
+  const key = `${emoji}@${fontSize}`;
+  let cached = emojiCache.get(key);
+  if (cached) return cached;
+
+  // Create offscreen canvas with padding for emoji rendering
+  const padding = Math.ceil(fontSize * 0.3);
+  const size = fontSize + padding * 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = size * devicePixelRatio;
+  canvas.height = size * devicePixelRatio;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  ctx.font = `${fontSize}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, size / 2, size / 2);
+
+  emojiCache.set(key, canvas);
+  return canvas;
+}
+
+function drawCachedEmoji(ctx: CanvasRenderingContext2D, emoji: string, fontSize: number, cx: number, cy: number) {
+  const canvas = getEmojiCanvas(emoji, fontSize);
+  const padding = Math.ceil(fontSize * 0.3);
+  const size = fontSize + padding * 2;
+  // Draw centered at (cx, cy)
+  ctx.drawImage(canvas, cx - size / 2, cy - size / 2, size, size);
+}
+
 export default function HexGrid({
   hexes,
   provinces,
@@ -138,6 +171,15 @@ export default function HexGrid({
     ctx.scale(cam.zoom, cam.zoom);
 
     const size = DEFAULT_HEX_SIZE;
+
+    // Viewport culling: compute visible world bounds
+    const canvasW = width / devicePixelRatio;
+    const canvasH = height / devicePixelRatio;
+    const viewLeft = -cam.x / cam.zoom;
+    const viewTop = -cam.y / cam.zoom;
+    const viewRight = (canvasW - cam.x) / cam.zoom;
+    const viewBottom = (canvasH - cam.y) / cam.zoom;
+    const margin = size * 2; // extra margin to include partially visible hexes
     const currentPlayerId = currentPlayerIdRef.current;
     const currentTurnPlayerId = currentTurnPlayerIdRef.current;
     const selectedHex = selectedHexRef.current;
@@ -148,6 +190,11 @@ export default function HexGrid({
 
     for (const hex of hexes) {
       const { x: cx, y: cy } = hexToPixel(hex.coord.q, hex.coord.r, size);
+
+      // Viewport culling — skip hexes entirely outside the visible area
+      if (cx < viewLeft - margin || cx > viewRight + margin ||
+          cy < viewTop - margin || cy > viewBottom + margin) continue;
+
       const path = getHexPath(cx, cy, size);
 
       // Determine colors
@@ -217,22 +264,16 @@ export default function HexGrid({
       }
 
       // Draw emoji icons LAST so they always appear on top of overlays
+      const emojiSize = Math.round(size * 0.6);
+
       // Tree
       if (hex.hasTree && hex.terrain !== TerrainType.WATER) {
-        ctx.fillStyle = '#000';
-        ctx.font = `${Math.round(size * 0.6)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('🌲', cx, cy);
+        drawCachedEmoji(ctx, '🌲', emojiSize, cx, cy);
       }
 
       // Mountain indicator
       if (hex.terrain === TerrainType.MOUNTAIN) {
-        ctx.fillStyle = '#000';
-        ctx.font = `${Math.round(size * 0.6)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('⛰️', cx, cy);
+        drawCachedEmoji(ctx, '⛰️', emojiSize, cx, cy);
       }
 
       // Structure
@@ -242,22 +283,16 @@ export default function HexGrid({
           : hex.structure.type === StructureType.TOWER
             ? '🏰'
             : '🏠';
-        ctx.fillStyle = '#000';
-        ctx.font = `${Math.round(size * 0.6)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(emoji, cx, cy - size * 0.1);
+        drawCachedEmoji(ctx, emoji, emojiSize, cx, cy - size * 0.1);
 
         // Hourglass for newly built structures (can't jump through yet)
         if (hex.structure.builtThisTurn && hex.structure.owner === currentPlayerId) {
-          ctx.font = `${Math.round(size * 0.25)}px serif`;
-          ctx.fillText('⏳', cx - size * 0.3, cy - size * 0.35);
+          drawCachedEmoji(ctx, '⏳', Math.round(size * 0.25), cx - size * 0.3, cy - size * 0.35);
         }
 
         // Star icon for capitols
         if (hex.structure.isCapitol) {
-          ctx.font = `${Math.round(size * 0.3)}px serif`;
-          ctx.fillText('⭐', cx + size * 0.3, cy - size * 0.35);
+          drawCachedEmoji(ctx, '⭐', Math.round(size * 0.3), cx + size * 0.3, cy - size * 0.35);
         }
 
         // Gold badge on current player's capitols
@@ -284,11 +319,7 @@ export default function HexGrid({
       // Unit
       if (hex.unit) {
         const emoji = getUnitEmoji(hex.unit.type);
-        ctx.fillStyle = '#000';
-        ctx.font = `${Math.round(size * 0.6)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(emoji, cx, cy - size * 0.1);
+        drawCachedEmoji(ctx, emoji, emojiSize, cx, cy - size * 0.1);
 
         // Strength badge
         const badgeY = cy + size * 0.3;
@@ -301,15 +332,11 @@ export default function HexGrid({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(hex.unit.strength), cx, badgeY);
-
       }
 
       // Death marker (starvation)
       if (hex.deathMarker === 'starvation') {
-        ctx.font = `${Math.round(size * 0.55)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('☠️', cx, cy);
+        drawCachedEmoji(ctx, '☠️', Math.round(size * 0.55), cx, cy);
       }
     }
 
@@ -335,6 +362,9 @@ export default function HexGrid({
       for (const hex of hexes) {
         if (hex.owner !== currentTurnPlayer) continue;
         const { x: cx, y: cy } = hexToPixel(hex.coord.q, hex.coord.r, size);
+        // Cull off-screen hexes for border drawing too
+        if (cx < viewLeft - margin || cx > viewRight + margin ||
+            cy < viewTop - margin || cy > viewBottom + margin) continue;
         const corners = getHexCorners(cx, cy, size);
 
         for (let i = 0; i < 6; i++) {
