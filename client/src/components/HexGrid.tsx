@@ -378,34 +378,10 @@ export default function HexGrid({
   const drawRef = useRef(draw);
   useEffect(() => { drawRef.current = draw; }, [draw]);
 
-  // Resize canvas to fill container — separate from draw to avoid re-subscribing
-  useEffect(() => {
-    const container = containerRef.current;
+  // Fit camera to map bounds — reusable for initial load & orientation changes
+  const fitCamera = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!container || !canvas) return;
-
-    const resize = () => {
-      const rect = container.getBoundingClientRect();
-      canvas.width = rect.width * devicePixelRatio;
-      canvas.height = rect.height * devicePixelRatio;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-      // Draw synchronously to avoid blank frame after canvas clear
-      drawRef.current();
-    };
-
-    const observer = new ResizeObserver(resize);
-    observer.observe(container);
-    resize(); // Initial size
-
-    return () => observer.disconnect();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-fit camera to land hexes on initial load
-  useEffect(() => {
-    if (hasAutoFittedRef.current || hexes.length === 0) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || hexes.length === 0) return;
 
     const landHexes = hexes.filter(h => h.terrain !== TerrainType.WATER);
     if (landHexes.length === 0) return;
@@ -437,10 +413,64 @@ export default function HexGrid({
     cam.zoom = zoom;
     cam.x = canvasW / 2 - gridCenterX * zoom;
     cam.y = canvasH / 2 - gridCenterY * zoom;
+  }, [hexes]);
 
+  // Track last container dimensions to detect orientation changes
+  const lastSizeRef = useRef({ w: 0, h: 0 });
+
+  // Resize canvas to fill container — separate from draw to avoid re-subscribing
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const resize = () => {
+      const rect = container.getBoundingClientRect();
+      const newW = rect.width;
+      const newH = rect.height;
+
+      canvas.width = newW * devicePixelRatio;
+      canvas.height = newH * devicePixelRatio;
+      canvas.style.width = `${newW}px`;
+      canvas.style.height = `${newH}px`;
+
+      // Detect orientation/aspect-ratio change and re-center the map
+      const { w: prevW, h: prevH } = lastSizeRef.current;
+      const wasLandscape = prevW > prevH;
+      const isLandscape = newW > newH;
+      const orientationChanged = prevW > 0 && wasLandscape !== isLandscape;
+      // Also re-center on significant resize (>20% change in either dimension)
+      const significantResize = prevW > 0 && (
+        Math.abs(newW - prevW) / prevW > 0.2 || Math.abs(newH - prevH) / prevH > 0.2
+      );
+
+      lastSizeRef.current = { w: newW, h: newH };
+
+      if (orientationChanged || significantResize) {
+        fitCamera();
+      }
+
+      // Draw synchronously to avoid blank frame after canvas clear
+      drawRef.current();
+    };
+
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    resize(); // Initial size
+
+    return () => observer.disconnect();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-fit camera to land hexes on initial load
+  useEffect(() => {
+    if (hasAutoFittedRef.current || hexes.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    fitCamera();
     hasAutoFittedRef.current = true;
     requestDraw();
-  }, [hexes, requestDraw]);
+  }, [hexes, requestDraw, fitCamera]);
 
   // Mouse handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
