@@ -86,34 +86,67 @@ function getValidMoves(gameState: GameState, playerId: string): UnitMove[] {
 
   for (const { unit, hex: sourceHex } of units) {
     const neighbors = getHexNeighbors(sourceHex.coord.q, sourceHex.coord.r);
+    const moveSet = new Set<string>();
+
+    // BFS through connected structures for jump-through
+    const structureSet = new Set<string>();
+    const structureQueue: HexCoord[] = [];
     for (const nc of neighbors) {
       const targetHex = lookup.get(coordKey(nc.q, nc.r));
+      if (targetHex && targetHex.owner === playerId && targetHex.structure) {
+        const key = coordKey(nc.q, nc.r);
+        structureSet.add(key);
+        structureQueue.push(nc);
+      }
+    }
+    while (structureQueue.length > 0) {
+      const current = structureQueue.shift()!;
+      for (const cn of getHexNeighbors(current.q, current.r)) {
+        const key = coordKey(cn.q, cn.r);
+        if (structureSet.has(key)) continue;
+        const h = lookup.get(key);
+        if (h && h.owner === playerId && h.structure) {
+          structureSet.add(key);
+          structureQueue.push(cn);
+        }
+      }
+    }
+
+    // Add jump-through destinations (non-structure neighbors of the chain)
+    for (const structKey of structureSet) {
+      const [sq, sr] = structKey.split(',').map(Number);
+      for (const sn of getHexNeighbors(sq, sr)) {
+        const key = coordKey(sn.q, sn.r);
+        if (key === coordKey(sourceHex.coord.q, sourceHex.coord.r)) continue;
+        if (structureSet.has(key)) continue;
+        if (moveSet.has(key)) continue;
+        const jumpTarget = lookup.get(key);
+        if (!jumpTarget || jumpTarget.terrain === TerrainType.WATER) continue;
+        if (jumpTarget.owner === playerId && jumpTarget.structure) continue;
+        if (jumpTarget.owner === playerId && !jumpTarget.unit) {
+          moveSet.add(key);
+          moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
+        } else if (jumpTarget.owner === null) {
+          moveSet.add(key);
+          moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
+        } else if (jumpTarget.owner !== playerId) {
+          if (canCapture(unit, jumpTarget, gameState.hexes)) {
+            moveSet.add(key);
+            moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
+          }
+        }
+      }
+    }
+
+    // Normal adjacent moves (non-structure hexes)
+    for (const nc of neighbors) {
+      const key = coordKey(nc.q, nc.r);
+      if (structureSet.has(key)) continue;
+      if (moveSet.has(key)) continue;
+      const targetHex = lookup.get(key);
       if (!targetHex || targetHex.terrain === TerrainType.WATER) continue;
 
-      // Check if we can actually move there
       if (targetHex.owner === playerId) {
-        // Own structure — can't land on it, but can jump through to adjacent tiles
-        if (targetHex.structure) {
-          // Jump through: find tiles adjacent to both the structure and not the source
-          const structNeighbors = getHexNeighbors(nc.q, nc.r);
-          for (const sn of structNeighbors) {
-            if (sn.q === sourceHex.coord.q && sn.r === sourceHex.coord.r) continue;
-            const jumpTarget = lookup.get(coordKey(sn.q, sn.r));
-            if (!jumpTarget || jumpTarget.terrain === TerrainType.WATER) continue;
-            if (jumpTarget.owner === playerId && jumpTarget.structure) continue;
-            if (jumpTarget.owner === playerId && !jumpTarget.unit) {
-              moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
-            } else if (jumpTarget.owner === null) {
-              moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
-            } else if (jumpTarget.owner !== playerId) {
-              if (canCapture(unit, jumpTarget, gameState.hexes)) {
-                moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
-              }
-            }
-          }
-          continue;
-        }
-        // Can move to own territory if no unit or mergeable
         if (!targetHex.unit) {
           moves.push({ unitId: unit.id, from: sourceHex.coord, to: nc });
         }

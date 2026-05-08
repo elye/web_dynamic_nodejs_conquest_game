@@ -333,6 +333,37 @@ describe('moveUnit', () => {
     expect(targetHex!.unit!.id).toBe('u1');
   });
 
+  it('can jump through a chain of connected structures', () => {
+    // Place a second structure adjacent to the first: (2,0) must be owned by p1
+    const hex2 = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    hex2.owner = 'p1';
+    hex2.unit = null;
+    hex2.structure = {
+      id: 'tower-chain',
+      type: StructureType.TOWER,
+      owner: 'p1',
+      hex: { q: 2, r: 0 },
+      strength: STRUCTURE_STRENGTH[StructureType.TOWER],
+      isCapitol: false,
+    };
+    // Update province to include (2,0)
+    const prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    prov.hexes.push({ q: 2, r: 0 });
+
+    // Add target hex at (3,0) — distance 3 from unit at (0,0)
+    gs.hexes.push(makeHex(3, 0, null)); // neutral hex adjacent to (2,0)
+    // Also add (2,1) as neutral for another jump target
+    gs.hexes.push(makeHex(2, 1, null));
+
+    // Unit at (0,0) should jump through (1,0)→(2,0) to reach (3,0)
+    const result = moveUnit(gs, 'p1', 'u1', { q: 3, r: 0 });
+    const sourceHex = result.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0);
+    const targetHex = result.hexes.find((h) => h.coord.q === 3 && h.coord.r === 0);
+    expect(sourceHex!.unit).toBeNull();
+    expect(targetHex!.unit).not.toBeNull();
+    expect(targetHex!.unit!.id).toBe('u1');
+  });
+
   it("can't move unit that already moved", () => {
     // Move once
     moveUnit(gs, 'p1', 'u1', { q: 0, r: 1 });

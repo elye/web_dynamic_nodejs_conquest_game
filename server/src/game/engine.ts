@@ -325,28 +325,49 @@ export function moveUnit(
   }
 
   // Validate adjacency: target must be adjacent to the unit,
-  // OR distance-2 with an own structure in between (jump through)
+  // OR reachable through a connected chain of own structures (recursive jump-through)
   const dist = hexDistance(sourceHex.coord, toHex);
   let isJumpThrough = false;
   if (dist === 1) {
     // Normal adjacency — ok
-  } else if (dist === 2) {
-    // Check if there's a friendly structure on a hex between source and target
+  } else {
+    // Check if target is adjacent to a connected chain of own structures starting from source neighbors
     const sourceNeighbors = getHexNeighbors(sourceHex.coord.q, sourceHex.coord.r);
-    const targetNeighbors = getHexNeighbors(toHex.q, toHex.r);
-    const targetNeighborSet = new Set(targetNeighbors.map(n => `${n.q},${n.r}`));
-    const bridgeHex = sourceNeighbors.find((sn) => {
-      if (!targetNeighborSet.has(`${sn.q},${sn.r}`)) return false;
+
+    // BFS through connected structures starting from source's adjacent structures
+    const structureSet = new Set<string>();
+    const queue: HexCoord[] = [];
+    for (const sn of sourceNeighbors) {
       const h = getHex(gameState.hexes, sn);
-      return h?.structure && h.owner === playerId;
-    });
-    if (bridgeHex) {
+      if (h?.structure && h.owner === playerId) {
+        const key = `${sn.q},${sn.r}`;
+        structureSet.add(key);
+        queue.push(sn);
+      }
+    }
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const cn of getHexNeighbors(current.q, current.r)) {
+        const key = `${cn.q},${cn.r}`;
+        if (structureSet.has(key)) continue;
+        const h = getHex(gameState.hexes, cn);
+        if (h?.structure && h.owner === playerId) {
+          structureSet.add(key);
+          queue.push(cn);
+        }
+      }
+    }
+
+    // Target must be adjacent to one of the structures in the chain
+    const targetNeighbors = getHexNeighbors(toHex.q, toHex.r);
+    const adjacentToChain = targetNeighbors.some(
+      (tn) => structureSet.has(`${tn.q},${tn.r}`),
+    );
+    if (adjacentToChain) {
       isJumpThrough = true;
     } else {
       throw new Error('Target hex is not adjacent to unit');
     }
-  } else {
-    throw new Error('Target hex is not adjacent to unit');
   }
 
   // Validate: target must be own territory or adjacent to own territory

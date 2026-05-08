@@ -55,35 +55,70 @@ function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string)
   const unitStrength = sourceHex?.unit?.strength ?? 0;
 
   const results: HexCoord[] = [];
+  const resultSet = new Set<string>();
   const neighbors = getHexNeighbors(hex.q, hex.r);
 
+  // Collect all connected structures reachable from adjacent structures (flood-fill)
+  const structureSet = new Set<string>();
+  const structureQueue: HexCoord[] = [];
   for (const n of neighbors) {
     const target = hexMap.get(`${n.q},${n.r}`);
-    if (!target || target.terrain === TerrainType.WATER) continue;
-
-    // Own structure — can't land on it, but can jump through
-    if (target.owner === currentPlayerId && target.structure) {
-      // Jump through: find tiles adjacent to the structure (but not the source)
-      const structNeighbors = getHexNeighbors(n.q, n.r);
-      for (const sn of structNeighbors) {
-        if (sn.q === hex.q && sn.r === hex.r) continue;
-        const jumpTarget = hexMap.get(`${sn.q},${sn.r}`);
-        if (!jumpTarget || jumpTarget.terrain === TerrainType.WATER) continue;
-        if (jumpTarget.owner === currentPlayerId && jumpTarget.structure) continue;
-        if (jumpTarget.owner !== null && jumpTarget.owner !== currentPlayerId) {
-          const defense = getHexDefense(jumpTarget, hexMap);
-          if (unitStrength <= defense) continue;
-        }
-        results.push(sn);
+    if (target && target.owner === currentPlayerId && target.structure) {
+      const key = `${n.q},${n.r}`;
+      if (!structureSet.has(key)) {
+        structureSet.add(key);
+        structureQueue.push(n);
       }
-      continue;
     }
+  }
+  // BFS through connected structures
+  while (structureQueue.length > 0) {
+    const current = structureQueue.shift()!;
+    const sNeighbors = getHexNeighbors(current.q, current.r);
+    for (const sn of sNeighbors) {
+      const key = `${sn.q},${sn.r}`;
+      if (structureSet.has(key)) continue;
+      const snHex = hexMap.get(key);
+      if (snHex && snHex.owner === currentPlayerId && snHex.structure) {
+        structureSet.add(key);
+        structureQueue.push(sn);
+      }
+    }
+  }
 
-    // Can't attack/capture if unit isn't strong enough
+  // Add all non-structure neighbors of the structure chain as jump-through targets
+  for (const structKey of structureSet) {
+    const [sq, sr] = structKey.split(',').map(Number);
+    const sNeighbors = getHexNeighbors(sq, sr);
+    for (const sn of sNeighbors) {
+      const key = `${sn.q},${sn.r}`;
+      if (key === `${hex.q},${hex.r}`) continue; // skip source
+      if (structureSet.has(key)) continue; // skip structures in chain
+      if (resultSet.has(key)) continue; // skip duplicates
+      const jumpTarget = hexMap.get(key);
+      if (!jumpTarget || jumpTarget.terrain === TerrainType.WATER) continue;
+      if (jumpTarget.owner === currentPlayerId && jumpTarget.structure) continue;
+      if (jumpTarget.owner !== null && jumpTarget.owner !== currentPlayerId) {
+        const defense = getHexDefense(jumpTarget, hexMap);
+        if (unitStrength <= defense) continue;
+      }
+      resultSet.add(key);
+      results.push(sn);
+    }
+  }
+
+  // Add normal adjacent moves (non-structure hexes)
+  for (const n of neighbors) {
+    const key = `${n.q},${n.r}`;
+    if (structureSet.has(key)) continue; // handled above via jump-through
+    if (resultSet.has(key)) continue;
+    const target = hexMap.get(key);
+    if (!target || target.terrain === TerrainType.WATER) continue;
     if (target.owner !== null && target.owner !== currentPlayerId) {
       const defense = getHexDefense(target, hexMap);
       if (unitStrength <= defense) continue;
     }
+    resultSet.add(key);
     results.push(n);
   }
 
