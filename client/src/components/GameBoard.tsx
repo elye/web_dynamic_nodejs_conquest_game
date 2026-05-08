@@ -77,13 +77,27 @@ export default function GameBoard({
 
   const [showSidebar, setShowSidebar] = useState(false);
 
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  };
+
   return (
     <div className="flex h-screen w-screen bg-gray-900">
-      {/* Side panel — hidden on mobile, toggleable */}
-      <div className={`${showSidebar ? 'fixed inset-0 z-40 flex' : 'hidden'} md:relative md:flex md:z-auto`}>
-        {/* Backdrop for mobile */}
-        <div className="md:hidden fixed inset-0 bg-black/50" onClick={() => setShowSidebar(false)} />
-        <div className="relative z-50 w-64 shrink-0 bg-gray-800 border-r border-gray-700 flex flex-col max-h-screen overflow-y-auto">
+      {/* Side panel — slide-in drawer on mobile, static on desktop */}
+      {/* Mobile backdrop */}
+      {showSidebar && (
+        <div className="md:hidden fixed inset-0 bg-black/40 z-40" onClick={() => setShowSidebar(false)} />
+      )}
+      <div className={`
+        fixed top-0 left-0 h-full z-50 transition-transform duration-200 ease-in-out
+        ${showSidebar ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0 md:z-auto md:transition-none
+      `}>
+        <div className="w-56 md:w-64 h-full bg-gray-800 border-r border-gray-700 flex flex-col overflow-y-auto">
           {/* Close button on mobile */}
           <button
             onClick={() => setShowSidebar(false)}
@@ -182,30 +196,39 @@ export default function GameBoard({
       </div>
 
       {/* Map area */}
-      <div className="flex-1 flex flex-col min-h-0 relative">
+      <div className="flex-1 flex flex-col min-h-0 relative md:ml-0">
         {/* Turn & connection header */}
-        <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center px-4 justify-between">
+        <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center px-3 md:px-4 justify-between gap-2">
           {/* Sidebar toggle for mobile */}
           <button
-            onClick={() => setShowSidebar(true)}
-            className="md:hidden text-gray-300 hover:text-white mr-2 text-lg"
+            onClick={() => setShowSidebar(s => !s)}
+            className="md:hidden text-gray-300 hover:text-white text-lg shrink-0"
             title="Show players & info"
           >
             ☰
           </button>
-          <span className="text-sm text-gray-300">
+          <span className="text-xs md:text-sm text-gray-300 truncate">
             {gameState.currentTurnPlayerId === currentPlayerId
               ? 'Your turn'
               : `Waiting for ${gameState.players.find((p) => p.id === gameState.currentTurnPlayerId)?.name ?? '...'}`}
           </span>
-          {isConnected !== undefined && (
-            <span className="flex items-center gap-1 text-xs text-gray-400">
-              <span
-                className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}
-              />
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {isConnected !== undefined && (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <span
+                  className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}
+                />
+                <span className="hidden md:inline">{isConnected ? 'Connected' : 'Disconnected'}</span>
+              </span>
+            )}
+            <button
+              onClick={toggleFullscreen}
+              className="text-gray-400 hover:text-white text-sm"
+              title="Toggle Fullscreen"
+            >
+              ⛶
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 relative min-h-0 overflow-hidden">
