@@ -45,7 +45,6 @@ export default function HexGrid({
   const containerRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<Camera>({ x: 0, y: 0, zoom: 1 });
   const isDraggingRef = useRef(false);
-  const isPanningRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef<number>(0);
   const hoveredHexRef = useRef<HexCoord | null>(null);
@@ -472,59 +471,138 @@ export default function HexGrid({
     requestDraw();
   }, [hexes, requestDraw, fitCamera]);
 
-  // Mouse handlers
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    isDraggingRef.current = false;
-    isPanningRef.current = true;
-    lastMouseRef.current = { x: e.clientX, y: e.clientY };
+  // ── Pointer events (unified mouse + touch, no 300ms delay) ──
+  const pointerStartRef = useRef({ x: 0, y: 0 });
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchDistRef = useRef<number>(0);
+  const DRAG_THRESHOLD = 10; // pixels — movement under this counts as a tap
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    // Capture so we get pointermove/up even if pointer leaves canvas
+    canvas.setPointerCapture(e.pointerId);
+
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size === 1) {
+      // Single pointer: potential tap or pan
+      pointerStartRef.current = { x: e.clientX, y: e.clientY };
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      isDraggingRef.current = false;
+    } else if (activePointersRef.current.size === 2) {
+      // Second pointer arrived: start pinch
+      isDraggingRef.current = true;
+      const pts = Array.from(activePointersRef.current.values());
+      const dx = pts[1].x - pts[0].x;
+      const dy = pts[1].y - pts[0].y;
+      pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+    }
   }, []);
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      if (e.buttons === 1 && isPanningRef.current) {
-        // Pan (only if mousedown originated on the canvas)
-        const dx = e.clientX - lastMouseRef.current.x;
-        const dy = e.clientY - lastMouseRef.current.y;
-        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-          isDraggingRef.current = true;
-        }
-        cameraRef.current.x += dx;
-        cameraRef.current.y += dy;
-        lastMouseRef.current = { x: e.clientX, y: e.clientY };
-        requestDraw();
-      }
-
-      // Hover detection
-      const rect = canvas.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const world = screenToWorld(sx, sy);
-      const hex = pixelToHex(world.x, world.y);
-      const key = `${hex.q},${hex.r}`;
-      const prev = hoveredHexRef.current;
-      if (hexMapRef.current.has(key)) {
-        if (!prev || prev.q !== hex.q || prev.r !== hex.r) {
-          hoveredHexRef.current = hex;
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!activePointersRef.current.has(e.pointerId)) {
+      // Hover detection (mouse only, not touch)
+      if (e.pointerType === 'mouse') {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = screenToWorld(sx, sy);
+        const hex = pixelToHex(world.x, world.y);
+        const key = `${hex.q},${hex.r}`;
+        const prev = hoveredHexRef.current;
+        if (hexMapRef.current.has(key)) {
+          if (!prev || prev.q !== hex.q || prev.r !== hex.r) {
+            hoveredHexRef.current = hex;
+            requestDraw();
+          }
+        } else if (prev) {
+          hoveredHexRef.current = null;
           requestDraw();
         }
-      } else if (prev) {
-        hoveredHexRef.current = null;
+      }
+      return;
+    }
+
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size === 1) {
+      // Single pointer: pan or drag detection
+      const dx = e.clientX - pointerStartRef.current.x;
+      const dy = e.clientY - pointerStartRef.current.y;
+      const distFromStart = Math.sqrt(dx * dx + dy * dy);
+
+      if (!isDraggingRef.current && distFromStart > DRAG_THRESHOLD) {
+        isDraggingRef.current = true;
+      }
+
+      if (isDraggingRef.current) {
+        const moveDx = e.clientX - lastMouseRef.current.x;
+        const moveDy = e.clientY - lastMouseRef.current.y;
+        cameraRef.current.x += moveDx;
+        cameraRef.current.y += moveDy;
         requestDraw();
       }
-    },
-    [screenToWorld, requestDraw],
-  );
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
 
-  const handleMouseUp = useCallback(
-    (e: React.MouseEvent) => {
-      isPanningRef.current = false;
-      if (isDraggingRef.current) {
-        isDraggingRef.current = false;
-        return;
+      // Hover detection during mouse drag
+      if (e.pointerType === 'mouse') {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = screenToWorld(sx, sy);
+        const hex = pixelToHex(world.x, world.y);
+        const key = `${hex.q},${hex.r}`;
+        const prev = hoveredHexRef.current;
+        if (hexMapRef.current.has(key)) {
+          if (!prev || prev.q !== hex.q || prev.r !== hex.r) {
+            hoveredHexRef.current = hex;
+            requestDraw();
+          }
+        } else if (prev) {
+          hoveredHexRef.current = null;
+          requestDraw();
+        }
       }
+    } else if (activePointersRef.current.size === 2) {
+      // Pinch zoom
+      const pts = Array.from(activePointersRef.current.values());
+      const dx = pts[1].x - pts[0].x;
+      const dy = pts[1].y - pts[0].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const scale = dist / pinchDistRef.current;
+      pinchDistRef.current = dist;
+
+      const cam = cameraRef.current;
+      const midX = (pts[0].x + pts[1].x) / 2;
+      const midY = (pts[0].y + pts[1].y) / 2;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const mx = midX - rect.left;
+      const my = midY - rect.top;
+
+      const oldZoom = cam.zoom;
+      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, oldZoom * scale));
+      cam.x = mx - ((mx - cam.x) * newZoom) / oldZoom;
+      cam.y = my - ((my - cam.y) * newZoom) / oldZoom;
+      cam.zoom = newZoom;
+      requestDraw();
+    }
+  }, [screenToWorld, requestDraw]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    const wasActive = activePointersRef.current.has(e.pointerId);
+    activePointersRef.current.delete(e.pointerId);
+
+    if (!wasActive) return;
+
+    // Single pointer release without dragging = tap/click
+    if (activePointersRef.current.size === 0 && !isDraggingRef.current) {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -535,9 +613,20 @@ export default function HexGrid({
       if (hexMapRef.current.has(`${hex.q},${hex.r}`)) {
         onHexClick(hex.q, hex.r);
       }
-    },
-    [screenToWorld, onHexClick],
-  );
+    }
+
+    // Reset drag state when all pointers released
+    if (activePointersRef.current.size === 0) {
+      isDraggingRef.current = false;
+    }
+  }, [screenToWorld, onHexClick]);
+
+  const handlePointerCancel = useCallback((e: React.PointerEvent) => {
+    activePointersRef.current.delete(e.pointerId);
+    if (activePointersRef.current.size === 0) {
+      isDraggingRef.current = false;
+    }
+  }, []);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -559,105 +648,17 @@ export default function HexGrid({
     requestDraw();
   }, [requestDraw]);
 
-  // Touch handlers for pinch-to-zoom
-  const touchesRef = useRef<React.Touch[]>([]);
-  const pinchDistRef = useRef<number>(0);
-  const touchStartRef = useRef({ x: 0, y: 0 }); // initial touch position for tap detection
-  const TAP_THRESHOLD = 12; // pixels — movement under this counts as a tap
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    const touches = Array.from(e.touches);
-    touchesRef.current = touches;
-    if (touches.length === 1) {
-      const pos = { x: touches[0].clientX, y: touches[0].clientY };
-      lastMouseRef.current = pos;
-      touchStartRef.current = pos;
-      isDraggingRef.current = false;
-    } else if (touches.length === 2) {
-      isDraggingRef.current = true; // multi-touch always counts as drag
-      const dx = touches[1].clientX - touches[0].clientX;
-      const dy = touches[1].clientY - touches[0].clientY;
-      pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
-    }
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    e.preventDefault();
-    const touches = Array.from(e.touches);
-    if (touches.length === 1) {
-      const dx = touches[0].clientX - touchStartRef.current.x;
-      const dy = touches[0].clientY - touchStartRef.current.y;
-      const distFromStart = Math.sqrt(dx * dx + dy * dy);
-
-      if (!isDraggingRef.current && distFromStart > TAP_THRESHOLD) {
-        isDraggingRef.current = true;
-      }
-
-      // Only pan the map once drag threshold is exceeded
-      if (isDraggingRef.current) {
-        const moveDx = touches[0].clientX - lastMouseRef.current.x;
-        const moveDy = touches[0].clientY - lastMouseRef.current.y;
-        cameraRef.current.x += moveDx;
-        cameraRef.current.y += moveDy;
-        requestDraw();
-      }
-      lastMouseRef.current = { x: touches[0].clientX, y: touches[0].clientY };
-    } else if (touches.length === 2) {
-      const dx = touches[1].clientX - touches[0].clientX;
-      const dy = touches[1].clientY - touches[0].clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const scale = dist / pinchDistRef.current;
-      pinchDistRef.current = dist;
-
-      const cam = cameraRef.current;
-      const midX = (touches[0].clientX + touches[1].clientX) / 2;
-      const midY = (touches[0].clientY + touches[1].clientY) / 2;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const mx = midX - rect.left;
-      const my = midY - rect.top;
-
-      const oldZoom = cam.zoom;
-      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, oldZoom * scale));
-      cam.x = mx - ((mx - cam.x) * newZoom) / oldZoom;
-      cam.y = my - ((my - cam.y) * newZoom) / oldZoom;
-      cam.zoom = newZoom;
-      requestDraw();
-    }
-  }, [requestDraw]);
-
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (e.changedTouches.length === 1 && !isDraggingRef.current) {
-        const touch = e.changedTouches[0];
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        const sx = touch.clientX - rect.left;
-        const sy = touch.clientY - rect.top;
-        const world = screenToWorld(sx, sy);
-        const hex = pixelToHex(world.x, world.y);
-        if (hexMapRef.current.has(`${hex.q},${hex.r}`)) {
-          onHexClick(hex.q, hex.r);
-        }
-      }
-    },
-    [screenToWorld, onHexClick],
-  );
-
   return (
     <div ref={containerRef} className="w-full h-full relative" style={{ backgroundColor: '#0f172a' }}>
       <canvas
         ref={canvasRef}
         className="block touch-none"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onContextMenu={(e) => e.preventDefault()}
       />
     </div>
   );
