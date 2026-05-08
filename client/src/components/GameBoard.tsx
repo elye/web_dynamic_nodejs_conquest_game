@@ -236,15 +236,14 @@ export default function GameBoard({
 
                   return buttons.map((b) => {
                     const targetIdx = upgradeOrder.indexOf(b.type);
-                    // If hex has a unit, only show higher-tier upgrade options
-                    if (existingUnit && targetIdx <= currentIdx) return null;
-                    // If hex has a non-replaceable structure (capitol or built this turn), hide unit buttons
-                    if (!existingUnit && hasStructure && !canReplaceStructure) return null;
+                    // Determine if this button is blocked
+                    const isLowerTier = existingUnit && targetIdx <= currentIdx;
+                    const isBlockedByStructure = !existingUnit && hasStructure && !canReplaceStructure;
 
-                    const cost = existingUnit
+                    const cost = existingUnit && !isLowerTier
                       ? UNIT_COST[b.type] - UNIT_COST[existingUnitType!]
                       : UNIT_COST[b.type];
-                    const title = existingUnit
+                    const title = existingUnit && !isLowerTier
                       ? `Upgrade to ${b.label}`
                       : canReplaceStructure
                         ? `Replace structure with ${b.label}`
@@ -252,7 +251,6 @@ export default function GameBoard({
 
                     const handleClick = () => {
                       if (!selectedHex) return;
-                      // Confirm when replacing a structure
                       if (!existingUnit && canReplaceStructure) {
                         if (!window.confirm(`This will destroy the structure on this hex. Continue?`)) return;
                       }
@@ -264,7 +262,7 @@ export default function GameBoard({
                         key={b.type}
                         emoji={b.emoji}
                         cost={cost}
-                        disabled={!isMyTurn || !hasHex || gold < cost}
+                        disabled={!isMyTurn || !hasHex || gold < cost || !!isLowerTier || !!isBlockedByStructure}
                         onClick={handleClick}
                         title={title}
                       />
@@ -290,22 +288,20 @@ export default function GameBoard({
 
                   return buttons.map((b) => {
                     const targetIdx = upgradeOrder.indexOf(b.type);
-                    // Can't build same or lower tier when hex has a structure
-                    if (existingStructure && targetIdx <= currentIdx) return null;
-                    // Can't build on hex with unit (unless upgrading existing structure)
-                    if (!existingStructure && hasUnit) return null;
+                    const isLowerTier = existingStructure && targetIdx <= currentIdx;
+                    const isBlockedByUnit = !existingStructure && hasUnit;
 
-                    const cost = existingStructure
+                    const cost = existingStructure && !isLowerTier
                       ? STRUCTURE_COST[b.type] - STRUCTURE_COST[existingType!]
                       : STRUCTURE_COST[b.type];
-                    const title = existingStructure ? `Upgrade to ${b.label}` : `Build ${b.label}`;
+                    const title = existingStructure && !isLowerTier ? `Upgrade to ${b.label}` : `Build ${b.label}`;
 
                     return (
                       <ActionButton
                         key={b.type}
                         emoji={b.emoji}
                         cost={cost}
-                        disabled={!isMyTurn || !hasHex || gold < cost}
+                        disabled={!isMyTurn || !hasHex || gold < cost || !!isLowerTier || !!isBlockedByUnit}
                         onClick={() => selectedHex && onBuildStructure!(b.type, selectedHex)}
                         title={title}
                       />
