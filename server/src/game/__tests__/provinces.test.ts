@@ -293,7 +293,7 @@ describe('recalculateAllProvinces', () => {
 
     expect(gameState.provinces).toHaveLength(1);
     const prov = gameState.provinces[0];
-    expect(prov.income).toBe(2); // 3 hexes minus 1 tree
+    expect(prov.income).toBe(3); // 1 normal hex + 1 farmhouse hex (x2) - 1 tree
     expect(prov.upkeep).toBe(UNIT_UPKEEP[UnitType.PEASANT]);
     expect(prov.gold).toBe(50);
   });

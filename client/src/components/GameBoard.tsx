@@ -249,7 +249,14 @@ export default function GameBoard({
 
                 {/* Build structure buttons */}
                 <ActionButton
-                  emoji="🏰"
+                  emoji="�"
+                  cost={STRUCTURE_COST[StructureTypeEnum.FARMHOUSE]}
+                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.FARMHOUSE]}
+                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.FARMHOUSE, selectedHex)}
+                  title="Build Farmhouse"
+                />
+                <ActionButton
+                  emoji="�🏰"
                   cost={STRUCTURE_COST[StructureTypeEnum.TOWER]}
                   disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.TOWER]}
                   onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.TOWER, selectedHex)}

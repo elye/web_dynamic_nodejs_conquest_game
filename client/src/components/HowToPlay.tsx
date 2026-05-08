@@ -101,7 +101,7 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
           <section>
             <h3 className="text-white font-semibold mb-1">🏗️ Structures</h3>
             <ul className="space-y-1">
-              <li>� <strong>Farmhouse</strong> (10g) — no defense bonus</li>
+              <li>🏠 <strong>Farmhouse</strong> (10g) — no defense, x2 income on hex</li>
               <li>🏰 <strong>Tower</strong> (20g) — +1 defense to hex and neighbors</li>
               <li>🏯 <strong>Castle</strong> (30g) — +2 defense to hex and neighbors</li>
             </ul>

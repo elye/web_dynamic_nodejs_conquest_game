@@ -134,7 +134,7 @@ function createTestGameState(gameId: string = 'test-game'): GameState {
     hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: -1, r: 0 }],
     owner: 'p1',
     gold: 50,
-    income: 3,
+    income: 4, // 2 normal hexes + 1 farmhouse hex (x2)
     upkeep: UNIT_UPKEEP[UnitType.PEASANT],
   };
 
@@ -143,7 +143,7 @@ function createTestGameState(gameId: string = 'test-game'): GameState {
     hexes: [{ q: 2, r: 0 }, { q: 2, r: 1 }, { q: 3, r: 0 }],
     owner: 'p2',
     gold: 50,
-    income: 3,
+    income: 4, // 2 normal hexes + 1 farmhouse hex (x2)
     upkeep: UNIT_UPKEEP[UnitType.PEASANT],
   };
 
@@ -320,6 +320,17 @@ describe('moveUnit', () => {
   it("can't move to non-adjacent hex", () => {
     // (0,0) to (2,1) is not adjacent
     expect(() => moveUnit(gs, 'p1', 'u1', { q: 2, r: 1 })).toThrow('not adjacent');
+  });
+
+  it('can jump through own structure to reach distance-2 hex', () => {
+    // p1 unit at (0,0), p1 structure at (1,0)
+    // (1,1) is distance 2 from (0,0) and adjacent to (1,0) — valid jump target
+    const result = moveUnit(gs, 'p1', 'u1', { q: 1, r: 1 });
+    const sourceHex = result.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0);
+    const targetHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 1);
+    expect(sourceHex!.unit).toBeNull();
+    expect(targetHex!.unit).not.toBeNull();
+    expect(targetHex!.unit!.id).toBe('u1');
   });
 
   it("can't move unit that already moved", () => {

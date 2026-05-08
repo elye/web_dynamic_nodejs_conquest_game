@@ -595,11 +595,6 @@ export function buildStructure(
     throw new Error('Not your turn');
   }
 
-  // Cannot build farmhouses directly (only through capitol system)
-  if (structureType === StructureType.FARMHOUSE) {
-    throw new Error('Farmhouses cannot be built directly');
-  }
-
   // Snapshot before mutation for step-by-step undo
   const stack = turnSnapshotStacks.get(gameState.id) ?? [];
   stack.push(structuredClone(gameState));

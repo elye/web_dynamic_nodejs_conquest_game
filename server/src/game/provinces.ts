@@ -24,7 +24,12 @@ export function calculateProvinceIncome(
   for (const coord of province.hexes) {
     const hex = lookup.get(coordKey(coord.q, coord.r));
     if (hex && !hex.hasTree) {
-      income += 1;
+      // Farmhouse provides x2 income on its hex
+      if (hex.structure?.type === StructureType.FARMHOUSE) {
+        income += 2;
+      } else {
+        income += 1;
+      }
     }
   }
   return income;
