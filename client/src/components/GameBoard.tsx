@@ -222,6 +222,10 @@ export default function GameBoard({
                   const upgradeOrder = [UnitTypeEnum.PEASANT, UnitTypeEnum.SPEARMAN, UnitTypeEnum.BARON, UnitTypeEnum.KNIGHT];
                   const currentIdx = existingUnitType ? upgradeOrder.indexOf(existingUnitType) : -1;
                   const hasStructure = !!selectedHexData?.structure;
+                  const isCapitol = !!selectedHexData?.structure?.isCapitol;
+                  const isBuiltThisTurn = !!selectedHexData?.structure?.builtThisTurn;
+                  // Can't replace capitol or just-built structures
+                  const canReplaceStructure = hasStructure && !isCapitol && !isBuiltThisTurn;
 
                   const buttons = [
                     { emoji: '🧑‍🌾', type: UnitTypeEnum.PEASANT, label: 'Peasant' },
@@ -234,20 +238,22 @@ export default function GameBoard({
                     const targetIdx = upgradeOrder.indexOf(b.type);
                     // If hex has a unit, only show higher-tier upgrade options
                     if (existingUnit && targetIdx <= currentIdx) return null;
+                    // If hex has a non-replaceable structure (capitol or built this turn), hide unit buttons
+                    if (!existingUnit && hasStructure && !canReplaceStructure) return null;
 
                     const cost = existingUnit
                       ? UNIT_COST[b.type] - UNIT_COST[existingUnitType!]
                       : UNIT_COST[b.type];
                     const title = existingUnit
                       ? `Upgrade to ${b.label}`
-                      : hasStructure
+                      : canReplaceStructure
                         ? `Replace structure with ${b.label}`
                         : `Buy ${b.label}`;
 
                     const handleClick = () => {
                       if (!selectedHex) return;
                       // Confirm when replacing a structure
-                      if (!existingUnit && hasStructure) {
+                      if (!existingUnit && canReplaceStructure) {
                         if (!window.confirm(`This will destroy the structure on this hex. Continue?`)) return;
                       }
                       onBuyUnit!(b.type, selectedHex);

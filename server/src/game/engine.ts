@@ -578,6 +578,12 @@ export function buyUnit(
   // No existing unit — normal placement
   // If hex has a structure, destroy it to make room for the unit
   if (targetHex.structure) {
+    if (targetHex.structure.isCapitol) {
+      throw new Error('Cannot replace a capitol structure');
+    }
+    if (targetHex.structure.builtThisTurn) {
+      throw new Error('Cannot replace a structure built this turn');
+    }
     targetHex.structure = null;
   }
 

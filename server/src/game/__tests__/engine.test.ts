@@ -512,6 +512,29 @@ describe('buyUnit', () => {
     expect(placedHex.unit!.type).toBe(UnitType.PEASANT);
   });
 
+  it("can't replace a capitol structure with a unit", () => {
+    // Capitol is at (1,0)
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 })).toThrow(
+      'capitol',
+    );
+  });
+
+  it("can't replace a structure built this turn with a unit", () => {
+    const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    hex.structure = {
+      id: 'struct-new',
+      type: StructureType.FARMHOUSE,
+      owner: 'p1',
+      hex: { q: -1, r: 0 },
+      strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+      isCapitol: false,
+      builtThisTurn: true,
+    };
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 })).toThrow(
+      'built this turn',
+    );
+  });
+
   it("can't buy when it's not your turn", () => {
     expect(() => buyUnit(gs, 'p2', UnitType.PEASANT, { q: 2, r: 1 })).toThrow(
       'Not your turn',
