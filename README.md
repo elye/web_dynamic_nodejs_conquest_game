@@ -89,6 +89,25 @@ Refreshing the page or navigating back to the same URL will reconnect the player
 - You need a capitol to buy units.
 - Capturing an enemy capitol steals its gold.
 
+## Mobile & Touch
+
+The game is fully playable on phones and tablets in both portrait and landscape orientations.
+
+- **Tap** a hex to select it (instant, no long-press needed)
+- **Drag** to pan the map
+- **Pinch** to zoom in/out
+- **Fullscreen** button (⛶) hides the browser chrome for more screen space
+- **Sidebar** is a slide-in drawer on mobile/tablet — toggle with ☰
+- **Action bar** shows two rows in portrait (buy/build + actions) and one scrollable row in landscape
+- **Orientation change** automatically re-centers and re-fits the map
+- **Dynamic viewport** uses `dvh`/`dvw` so the game fills the screen properly on mobile browsers
+
+To test on a real device over Wi-Fi:
+```bash
+npm run build -w shared && npm run build -w client && npm run build -w server && npm run start -w server
+# Then open http://<your-local-ip>:3001 on your phone (same network)
+```
+
 ## Session & Reconnection
 
 - Players authenticate as guests with a name. Auth tokens are stored in `localStorage` and persist across page reloads.

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import type { Hex, HexCoord, Province } from '@conquest/shared';
 import { TerrainType, UnitType, StructureType, UNIT_COST } from '@conquest/shared';
 import { hexToPixel, pixelToHex, getHexPath, getHexCorners, getHexNeighbors, DEFAULT_HEX_SIZE } from '../utils/hexUtils';
@@ -45,10 +45,9 @@ export default function HexGrid({
   const containerRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<Camera>({ x: 0, y: 0, zoom: 1 });
   const isDraggingRef = useRef(false);
-  const isPanningRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
   const rafRef = useRef<number>(0);
-  const [hoveredHex, setHoveredHex] = useState<HexCoord | null>(null);
+  const hoveredHexRef = useRef<HexCoord | null>(null);
   const hasAutoFittedRef = useRef(false);
 
   // Build a lookup for hexes and valid targets
@@ -148,10 +147,11 @@ export default function HexGrid({
       const isValidTarget = validTargetSetRef.current.has(
         `${hex.coord.q},${hex.coord.r}`,
       );
+      const hovered = hoveredHexRef.current;
       const isHovered =
-        hoveredHex &&
-        hex.coord.q === hoveredHex.q &&
-        hex.coord.r === hoveredHex.r;
+        hovered &&
+        hex.coord.q === hovered.q &&
+        hex.coord.r === hovered.r;
 
       // Hover overlay (drawn before icons so emojis appear on top)
       if (isHovered && !isSelected) {
@@ -342,6 +342,7 @@ export default function HexGrid({
     ctx.restore();
 
     // Hovered hex tooltip
+    const hoveredHex = hoveredHexRef.current;
     if (hoveredHex) {
       ctx.fillStyle = 'rgba(0,0,0,0.75)';
       const text = `(${hoveredHex.q}, ${hoveredHex.r})`;
@@ -352,51 +353,34 @@ export default function HexGrid({
       ctx.fillStyle = '#fff';
       ctx.fillText(text, 12, height - 14);
     }
-  }, [hexes, selectedHex, hoveredHex, getHexColors, currentPlayerId, currentTurnPlayerId, provinces]);
+  }, [hexes, selectedHex, getHexColors, currentPlayerId, currentTurnPlayerId, provinces]);
 
-  // Animation loop
-  useEffect(() => {
-    const loop = () => {
-      draw();
-      rafRef.current = requestAnimationFrame(loop);
-    };
-    rafRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafRef.current);
+  // On-demand rendering: schedule a single rAF draw (no continuous loop)
+  const requestDraw = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => draw());
   }, [draw]);
 
-  // Resize canvas to fill container
+  // Redraw when game state or draw function changes
   useEffect(() => {
-    const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas) return;
+    requestDraw();
+  }, [requestDraw]);
 
-    const observer = new ResizeObserver(() => {
-      const rect = container.getBoundingClientRect();
-      canvas.width = rect.width * devicePixelRatio;
-      canvas.height = rect.height * devicePixelRatio;
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-      const ctx = canvas.getContext('2d');
-      if (ctx) ctx.scale(devicePixelRatio, devicePixelRatio);
-    });
-    observer.observe(container);
-    // Initial size
-    const rect = container.getBoundingClientRect();
-    canvas.width = rect.width * devicePixelRatio;
-    canvas.height = rect.height * devicePixelRatio;
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
-    const ctx = canvas.getContext('2d');
-    if (ctx) ctx.scale(devicePixelRatio, devicePixelRatio);
-
-    return () => observer.disconnect();
-  }, []);
-
-  // Auto-fit camera to land hexes on initial load
+  // Pulse animation: redraw at ~20fps when it's the player's turn (for glow effects)
   useEffect(() => {
-    if (hasAutoFittedRef.current || hexes.length === 0) return;
+    if (currentTurnPlayerId !== currentPlayerId) return;
+    const id = setInterval(() => requestDraw(), 50);
+    return () => clearInterval(id);
+  }, [currentTurnPlayerId, currentPlayerId, requestDraw]);
+
+  // Store draw in a ref so ResizeObserver always uses the latest without re-subscribing
+  const drawRef = useRef(draw);
+  useEffect(() => { drawRef.current = draw; }, [draw]);
+
+  // Fit camera to map bounds — reusable for initial load & orientation changes
+  const fitCamera = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || hexes.length === 0) return;
 
     const landHexes = hexes.filter(h => h.terrain !== TerrainType.WATER);
     if (landHexes.length === 0) return;
@@ -428,57 +412,197 @@ export default function HexGrid({
     cam.zoom = zoom;
     cam.x = canvasW / 2 - gridCenterX * zoom;
     cam.y = canvasH / 2 - gridCenterY * zoom;
-
-    hasAutoFittedRef.current = true;
   }, [hexes]);
 
-  // Mouse handlers
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    isDraggingRef.current = false;
-    isPanningRef.current = true;
-    lastMouseRef.current = { x: e.clientX, y: e.clientY };
+  // Track last container dimensions to detect orientation changes
+  const lastSizeRef = useRef({ w: 0, h: 0 });
+
+  // Resize canvas to fill container — separate from draw to avoid re-subscribing
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const resize = () => {
+      const rect = container.getBoundingClientRect();
+      const newW = rect.width;
+      const newH = rect.height;
+
+      canvas.width = newW * devicePixelRatio;
+      canvas.height = newH * devicePixelRatio;
+      canvas.style.width = `${newW}px`;
+      canvas.style.height = `${newH}px`;
+
+      // Detect orientation/aspect-ratio change and re-center the map
+      const { w: prevW, h: prevH } = lastSizeRef.current;
+      const wasLandscape = prevW > prevH;
+      const isLandscape = newW > newH;
+      const orientationChanged = prevW > 0 && wasLandscape !== isLandscape;
+      // Also re-center on significant resize (>20% change in either dimension)
+      const significantResize = prevW > 0 && (
+        Math.abs(newW - prevW) / prevW > 0.2 || Math.abs(newH - prevH) / prevH > 0.2
+      );
+
+      lastSizeRef.current = { w: newW, h: newH };
+
+      if (orientationChanged || significantResize) {
+        fitCamera();
+      }
+
+      // Draw synchronously to avoid blank frame after canvas clear
+      drawRef.current();
+    };
+
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    resize(); // Initial size
+
+    return () => observer.disconnect();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-fit camera to land hexes on initial load
+  useEffect(() => {
+    if (hasAutoFittedRef.current || hexes.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    fitCamera();
+    hasAutoFittedRef.current = true;
+    requestDraw();
+  }, [hexes, requestDraw, fitCamera]);
+
+  // ── Pointer events (unified mouse + touch, no 300ms delay) ──
+  const pointerStartRef = useRef({ x: 0, y: 0 });
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchDistRef = useRef<number>(0);
+  const DRAG_THRESHOLD = 10; // pixels — movement under this counts as a tap
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    // Capture so we get pointermove/up even if pointer leaves canvas
+    canvas.setPointerCapture(e.pointerId);
+
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size === 1) {
+      // Single pointer: potential tap or pan
+      pointerStartRef.current = { x: e.clientX, y: e.clientY };
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+      isDraggingRef.current = false;
+    } else if (activePointersRef.current.size === 2) {
+      // Second pointer arrived: start pinch
+      isDraggingRef.current = true;
+      const pts = Array.from(activePointersRef.current.values());
+      const dx = pts[1].x - pts[0].x;
+      const dy = pts[1].y - pts[0].y;
+      pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
+    }
   }, []);
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!activePointersRef.current.has(e.pointerId)) {
+      // Hover detection (mouse only, not touch)
+      if (e.pointerType === 'mouse') {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = screenToWorld(sx, sy);
+        const hex = pixelToHex(world.x, world.y);
+        const key = `${hex.q},${hex.r}`;
+        const prev = hoveredHexRef.current;
+        if (hexMapRef.current.has(key)) {
+          if (!prev || prev.q !== hex.q || prev.r !== hex.r) {
+            hoveredHexRef.current = hex;
+            requestDraw();
+          }
+        } else if (prev) {
+          hoveredHexRef.current = null;
+          requestDraw();
+        }
+      }
+      return;
+    }
+
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size === 1) {
+      // Single pointer: pan or drag detection
+      const dx = e.clientX - pointerStartRef.current.x;
+      const dy = e.clientY - pointerStartRef.current.y;
+      const distFromStart = Math.sqrt(dx * dx + dy * dy);
+
+      if (!isDraggingRef.current && distFromStart > DRAG_THRESHOLD) {
+        isDraggingRef.current = true;
+      }
+
+      if (isDraggingRef.current) {
+        const moveDx = e.clientX - lastMouseRef.current.x;
+        const moveDy = e.clientY - lastMouseRef.current.y;
+        cameraRef.current.x += moveDx;
+        cameraRef.current.y += moveDy;
+        requestDraw();
+      }
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+
+      // Hover detection during mouse drag
+      if (e.pointerType === 'mouse') {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const world = screenToWorld(sx, sy);
+        const hex = pixelToHex(world.x, world.y);
+        const key = `${hex.q},${hex.r}`;
+        const prev = hoveredHexRef.current;
+        if (hexMapRef.current.has(key)) {
+          if (!prev || prev.q !== hex.q || prev.r !== hex.r) {
+            hoveredHexRef.current = hex;
+            requestDraw();
+          }
+        } else if (prev) {
+          hoveredHexRef.current = null;
+          requestDraw();
+        }
+      }
+    } else if (activePointersRef.current.size === 2) {
+      // Pinch zoom
+      const pts = Array.from(activePointersRef.current.values());
+      const dx = pts[1].x - pts[0].x;
+      const dy = pts[1].y - pts[0].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const scale = dist / pinchDistRef.current;
+      pinchDistRef.current = dist;
+
+      const cam = cameraRef.current;
+      const midX = (pts[0].x + pts[1].x) / 2;
+      const midY = (pts[0].y + pts[1].y) / 2;
       const canvas = canvasRef.current;
       if (!canvas) return;
-
-      if (e.buttons === 1 && isPanningRef.current) {
-        // Pan (only if mousedown originated on the canvas)
-        const dx = e.clientX - lastMouseRef.current.x;
-        const dy = e.clientY - lastMouseRef.current.y;
-        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-          isDraggingRef.current = true;
-        }
-        cameraRef.current.x += dx;
-        cameraRef.current.y += dy;
-        lastMouseRef.current = { x: e.clientX, y: e.clientY };
-      }
-
-      // Hover detection
       const rect = canvas.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      const world = screenToWorld(sx, sy);
-      const hex = pixelToHex(world.x, world.y);
-      const key = `${hex.q},${hex.r}`;
-      if (hexMapRef.current.has(key)) {
-        setHoveredHex(hex);
-      } else {
-        setHoveredHex(null);
-      }
-    },
-    [screenToWorld],
-  );
+      const mx = midX - rect.left;
+      const my = midY - rect.top;
 
-  const handleMouseUp = useCallback(
-    (e: React.MouseEvent) => {
-      isPanningRef.current = false;
-      if (isDraggingRef.current) {
-        isDraggingRef.current = false;
-        return;
-      }
+      const oldZoom = cam.zoom;
+      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, oldZoom * scale));
+      cam.x = mx - ((mx - cam.x) * newZoom) / oldZoom;
+      cam.y = my - ((my - cam.y) * newZoom) / oldZoom;
+      cam.zoom = newZoom;
+      requestDraw();
+    }
+  }, [screenToWorld, requestDraw]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    const wasActive = activePointersRef.current.has(e.pointerId);
+    activePointersRef.current.delete(e.pointerId);
+
+    if (!wasActive) return;
+
+    // Single pointer release without dragging = tap/click
+    if (activePointersRef.current.size === 0 && !isDraggingRef.current) {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -489,9 +613,20 @@ export default function HexGrid({
       if (hexMapRef.current.has(`${hex.q},${hex.r}`)) {
         onHexClick(hex.q, hex.r);
       }
-    },
-    [screenToWorld, onHexClick],
-  );
+    }
+
+    // Reset drag state when all pointers released
+    if (activePointersRef.current.size === 0) {
+      isDraggingRef.current = false;
+    }
+  }, [screenToWorld, onHexClick]);
+
+  const handlePointerCancel = useCallback((e: React.PointerEvent) => {
+    activePointersRef.current.delete(e.pointerId);
+    if (activePointersRef.current.size === 0) {
+      isDraggingRef.current = false;
+    }
+  }, []);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -510,90 +645,20 @@ export default function HexGrid({
     cam.x = mx - ((mx - cam.x) * newZoom) / oldZoom;
     cam.y = my - ((my - cam.y) * newZoom) / oldZoom;
     cam.zoom = newZoom;
-  }, []);
-
-  // Touch handlers for pinch-to-zoom
-  const touchesRef = useRef<React.Touch[]>([]);
-  const pinchDistRef = useRef<number>(0);
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    const touches = Array.from(e.touches);
-    touchesRef.current = touches;
-    if (touches.length === 1) {
-      lastMouseRef.current = { x: touches[0].clientX, y: touches[0].clientY };
-      isDraggingRef.current = false;
-    } else if (touches.length === 2) {
-      const dx = touches[1].clientX - touches[0].clientX;
-      const dy = touches[1].clientY - touches[0].clientY;
-      pinchDistRef.current = Math.sqrt(dx * dx + dy * dy);
-    }
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    e.preventDefault();
-    const touches = Array.from(e.touches);
-    if (touches.length === 1) {
-      const dx = touches[0].clientX - lastMouseRef.current.x;
-      const dy = touches[0].clientY - lastMouseRef.current.y;
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDraggingRef.current = true;
-      cameraRef.current.x += dx;
-      cameraRef.current.y += dy;
-      lastMouseRef.current = { x: touches[0].clientX, y: touches[0].clientY };
-    } else if (touches.length === 2) {
-      const dx = touches[1].clientX - touches[0].clientX;
-      const dy = touches[1].clientY - touches[0].clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const scale = dist / pinchDistRef.current;
-      pinchDistRef.current = dist;
-
-      const cam = cameraRef.current;
-      const midX = (touches[0].clientX + touches[1].clientX) / 2;
-      const midY = (touches[0].clientY + touches[1].clientY) / 2;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const mx = midX - rect.left;
-      const my = midY - rect.top;
-
-      const oldZoom = cam.zoom;
-      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, oldZoom * scale));
-      cam.x = mx - ((mx - cam.x) * newZoom) / oldZoom;
-      cam.y = my - ((my - cam.y) * newZoom) / oldZoom;
-      cam.zoom = newZoom;
-    }
-  }, []);
-
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (e.changedTouches.length === 1 && !isDraggingRef.current) {
-        const touch = e.changedTouches[0];
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        const sx = touch.clientX - rect.left;
-        const sy = touch.clientY - rect.top;
-        const world = screenToWorld(sx, sy);
-        const hex = pixelToHex(world.x, world.y);
-        if (hexMapRef.current.has(`${hex.q},${hex.r}`)) {
-          onHexClick(hex.q, hex.r);
-        }
-      }
-    },
-    [screenToWorld, onHexClick],
-  );
+    requestDraw();
+  }, [requestDraw]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative" style={{ backgroundColor: '#0f172a' }}>
       <canvas
         ref={canvasRef}
         className="block touch-none"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
         onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onContextMenu={(e) => e.preventDefault()}
       />
     </div>
   );
