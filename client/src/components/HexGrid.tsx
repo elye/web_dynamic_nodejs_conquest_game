@@ -81,6 +81,19 @@ export default function HexGrid({
     validTargetSetRef.current = set;
   }, [validTargets]);
 
+  // Store props in refs so draw() can read them without being recreated
+  const hexesRef = useRef(hexes);
+  const selectedHexRef = useRef(selectedHex);
+  const currentPlayerIdRef = useRef(currentPlayerId);
+  const currentTurnPlayerIdRef = useRef(currentTurnPlayerId);
+  const playerIdsRef = useRef(playerIds);
+
+  useEffect(() => { hexesRef.current = hexes; }, [hexes]);
+  useEffect(() => { selectedHexRef.current = selectedHex; }, [selectedHex]);
+  useEffect(() => { currentPlayerIdRef.current = currentPlayerId; }, [currentPlayerId]);
+  useEffect(() => { currentTurnPlayerIdRef.current = currentTurnPlayerId; }, [currentTurnPlayerId]);
+  useEffect(() => { playerIdsRef.current = playerIds; }, [playerIds]);
+
   // Convert screen coords to world coords
   const screenToWorld = useCallback((sx: number, sy: number) => {
     const cam = cameraRef.current;
@@ -90,17 +103,17 @@ export default function HexGrid({
     };
   }, []);
 
-  // Get hex colors (fill and border)
+  // Get hex colors (fill and border) — reads from ref for stability
   const getHexColors = useCallback(
     (hex: Hex): { fill: string; border: string } => {
       if (hex.terrain === TerrainType.WATER) return { fill: WATER_HEX_FILL, border: WATER_BORDER };
       if (hex.owner) {
-        const pc = getPlayerColorById(hex.owner, playerIds);
+        const pc = getPlayerColorById(hex.owner, playerIdsRef.current);
         return { fill: pc.fill, border: pc.border };
       }
       return { fill: NEUTRAL_HEX_FILL, border: NEUTRAL_BORDER };
     },
-    [playerIds],
+    [],
   );
 
   // Draw the entire canvas
@@ -125,6 +138,10 @@ export default function HexGrid({
     ctx.scale(cam.zoom, cam.zoom);
 
     const size = DEFAULT_HEX_SIZE;
+    const currentPlayerId = currentPlayerIdRef.current;
+    const currentTurnPlayerId = currentTurnPlayerIdRef.current;
+    const selectedHex = selectedHexRef.current;
+    const hexes = hexesRef.current;
     const isMyTurn = currentTurnPlayerId === currentPlayerId;
     const pulseAlpha = (Math.sin(Date.now() / 400) + 1) / 2; // 0..1 oscillation
     const glowRadius = 8 + pulseAlpha * 8; // 8..16 shadow blur
@@ -353,7 +370,7 @@ export default function HexGrid({
       ctx.fillStyle = '#fff';
       ctx.fillText(text, 12, height - 14);
     }
-  }, [hexes, selectedHex, getHexColors, currentPlayerId, currentTurnPlayerId, provinces]);
+  }, [getHexColors]); // stable — reads all data from refs
 
   // On-demand rendering: schedule a single rAF draw (no continuous loop)
   const requestDraw = useCallback(() => {
@@ -361,15 +378,15 @@ export default function HexGrid({
     rafRef.current = requestAnimationFrame(() => draw());
   }, [draw]);
 
-  // Redraw when game state or draw function changes
+  // Redraw when game state changes (props updated refs above, now trigger draw)
   useEffect(() => {
     requestDraw();
-  }, [requestDraw]);
+  }, [hexes, selectedHex, currentPlayerId, currentTurnPlayerId, provinces, validTargets, requestDraw]);
 
-  // Pulse animation: redraw at ~20fps when it's the player's turn (for glow effects)
+  // Pulse animation: redraw at ~7fps when it's the player's turn (for glow effects)
   useEffect(() => {
     if (currentTurnPlayerId !== currentPlayerId) return;
-    const id = setInterval(() => requestDraw(), 50);
+    const id = setInterval(() => requestDraw(), 150);
     return () => clearInterval(id);
   }, [currentTurnPlayerId, currentPlayerId, requestDraw]);
 
@@ -380,6 +397,7 @@ export default function HexGrid({
   // Fit camera to map bounds — reusable for initial load & orientation changes
   const fitCamera = useCallback(() => {
     const canvas = canvasRef.current;
+    const hexes = hexesRef.current;
     if (!canvas || hexes.length === 0) return;
 
     const landHexes = hexes.filter(h => h.terrain !== TerrainType.WATER);
@@ -412,7 +430,7 @@ export default function HexGrid({
     cam.zoom = zoom;
     cam.x = canvasW / 2 - gridCenterX * zoom;
     cam.y = canvasH / 2 - gridCenterY * zoom;
-  }, [hexes]);
+  }, []); // stable — reads hexes from ref
 
   // Track last container dimensions to detect orientation changes
   const lastSizeRef = useRef({ w: 0, h: 0 });
@@ -469,7 +487,7 @@ export default function HexGrid({
     fitCamera();
     hasAutoFittedRef.current = true;
     requestDraw();
-  }, [hexes, requestDraw, fitCamera]);
+  }, [hexes, requestDraw, fitCamera]); // hexes triggers on initial load
 
   // ── Pointer events (unified mouse + touch, no 300ms delay) ──
   const pointerStartRef = useRef({ x: 0, y: 0 });
