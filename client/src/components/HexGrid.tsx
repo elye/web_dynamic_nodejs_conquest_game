@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, memo } from 'react';
 import type { Hex, HexCoord, Province } from '@conquest/shared';
 import { TerrainType, UnitType, StructureType, UNIT_COST } from '@conquest/shared';
 import { hexToPixel, pixelToHex, getHexPath, getHexCorners, getHexNeighbors, DEFAULT_HEX_SIZE } from '../utils/hexUtils';
@@ -10,16 +10,12 @@ import {
   WATER_BORDER,
   SELECTED_STROKE,
 } from '../utils/colors';
+import { useGameStore } from '../store/gameStore';
 
 interface HexGridProps {
-  hexes: Hex[];
-  provinces: Province[];
-  selectedHex: HexCoord | null;
   onHexClick: (q: number, r: number) => void;
   currentPlayerId: string | null;
-  currentTurnPlayerId?: string | null;
   playerIds: string[];
-  validTargets?: HexCoord[];
 }
 
 interface Camera {
@@ -31,15 +27,65 @@ interface Camera {
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 
-export default function HexGrid({
-  hexes,
-  provinces,
-  selectedHex,
+// ── Emoji cache: pre-render emojis to offscreen canvases for fast drawImage ──
+const emojiCache = new Map<string, HTMLCanvasElement>();
+
+function getEmojiCanvas(emoji: string, fontSize: number): HTMLCanvasElement {
+  const key = `${emoji}@${fontSize}`;
+  let cached = emojiCache.get(key);
+  if (cached) return cached;
+
+  // Create offscreen canvas with padding for emoji rendering
+  const padding = Math.ceil(fontSize * 0.3);
+  const size = fontSize + padding * 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = size * devicePixelRatio;
+  canvas.height = size * devicePixelRatio;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  ctx.font = `${fontSize}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, size / 2, size / 2);
+
+  emojiCache.set(key, canvas);
+  return canvas;
+}
+
+function drawCachedEmoji(ctx: CanvasRenderingContext2D, emoji: string, fontSize: number, cx: number, cy: number) {
+  const canvas = getEmojiCanvas(emoji, fontSize);
+  const padding = Math.ceil(fontSize * 0.3);
+  const size = fontSize + padding * 2;
+  // Draw centered at (cx, cy)
+  ctx.drawImage(canvas, cx - size / 2, cy - size / 2, size, size);
+}
+
+// ── Hex geometry cache: pre-compute pixel coords, Path2D, and corners ──
+// Hex positions are fixed for a given (q,r,size), so we compute trig once.
+interface HexGeometry {
+  cx: number;
+  cy: number;
+  path: Path2D;
+  corners: { x: number; y: number }[];
+}
+const hexGeoCache = new Map<string, HexGeometry>();
+
+function getHexGeometry(q: number, r: number, size: number): HexGeometry {
+  const key = `${q},${r}`;
+  let geo = hexGeoCache.get(key);
+  if (geo) return geo;
+  const { x: cx, y: cy } = hexToPixel(q, r, size);
+  const path = getHexPath(cx, cy, size);
+  const corners = getHexCorners(cx, cy, size);
+  geo = { cx, cy, path, corners };
+  hexGeoCache.set(key, geo);
+  return geo;
+}
+
+export default memo(function HexGrid({
   onHexClick,
   currentPlayerId,
-  currentTurnPlayerId,
   playerIds,
-  validTargets = [],
 }: HexGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -55,31 +101,16 @@ export default function HexGrid({
   const validTargetSetRef = useRef<Set<string>>(new Set());
   const provinceByHexRef = useRef<Map<string, Province>>(new Map());
 
-  useEffect(() => {
-    const map = new Map<string, Province>();
-    for (const prov of provinces) {
-      for (const h of prov.hexes) {
-        map.set(`${h.q},${h.r}`, prov);
-      }
-    }
-    provinceByHexRef.current = map;
-  }, [provinces]);
+  // Store game data in refs (updated by Zustand subscription, not React props)
+  const hexesRef = useRef<Hex[]>([]);
+  const selectedHexRef = useRef<HexCoord | null>(null);
+  const currentPlayerIdRef = useRef(currentPlayerId);
+  const currentTurnPlayerIdRef = useRef<string | null>(null);
+  const playerIdsRef = useRef(playerIds);
 
-  useEffect(() => {
-    const map = new Map<string, Hex>();
-    for (const hex of hexes) {
-      map.set(`${hex.coord.q},${hex.coord.r}`, hex);
-    }
-    hexMapRef.current = map;
-  }, [hexes]);
-
-  useEffect(() => {
-    const set = new Set<string>();
-    for (const t of validTargets) {
-      set.add(`${t.q},${t.r}`);
-    }
-    validTargetSetRef.current = set;
-  }, [validTargets]);
+  // Keep prop-based refs in sync (these rarely change)
+  currentPlayerIdRef.current = currentPlayerId;
+  playerIdsRef.current = playerIds;
 
   // Convert screen coords to world coords
   const screenToWorld = useCallback((sx: number, sy: number) => {
@@ -90,17 +121,17 @@ export default function HexGrid({
     };
   }, []);
 
-  // Get hex colors (fill and border)
+  // Get hex colors (fill and border) — reads from ref for stability
   const getHexColors = useCallback(
     (hex: Hex): { fill: string; border: string } => {
       if (hex.terrain === TerrainType.WATER) return { fill: WATER_HEX_FILL, border: WATER_BORDER };
       if (hex.owner) {
-        const pc = getPlayerColorById(hex.owner, playerIds);
+        const pc = getPlayerColorById(hex.owner, playerIdsRef.current);
         return { fill: pc.fill, border: pc.border };
       }
       return { fill: NEUTRAL_HEX_FILL, border: NEUTRAL_BORDER };
     },
-    [playerIds],
+    [],
   );
 
   // Draw the entire canvas
@@ -125,13 +156,30 @@ export default function HexGrid({
     ctx.scale(cam.zoom, cam.zoom);
 
     const size = DEFAULT_HEX_SIZE;
+
+    // Viewport culling: compute visible world bounds
+    const canvasW = width / devicePixelRatio;
+    const canvasH = height / devicePixelRatio;
+    const viewLeft = -cam.x / cam.zoom;
+    const viewTop = -cam.y / cam.zoom;
+    const viewRight = (canvasW - cam.x) / cam.zoom;
+    const viewBottom = (canvasH - cam.y) / cam.zoom;
+    const margin = size * 2; // extra margin to include partially visible hexes
+    const currentPlayerId = currentPlayerIdRef.current;
+    const currentTurnPlayerId = currentTurnPlayerIdRef.current;
+    const selectedHex = selectedHexRef.current;
+    const hexes = hexesRef.current;
     const isMyTurn = currentTurnPlayerId === currentPlayerId;
     const pulseAlpha = (Math.sin(Date.now() / 400) + 1) / 2; // 0..1 oscillation
     const glowRadius = 8 + pulseAlpha * 8; // 8..16 shadow blur
 
     for (const hex of hexes) {
-      const { x: cx, y: cy } = hexToPixel(hex.coord.q, hex.coord.r, size);
-      const path = getHexPath(cx, cy, size);
+      const geo = getHexGeometry(hex.coord.q, hex.coord.r, size);
+      const { cx, cy, path } = geo;
+
+      // Viewport culling — skip hexes entirely outside the visible area
+      if (cx < viewLeft - margin || cx > viewRight + margin ||
+          cy < viewTop - margin || cy > viewBottom + margin) continue;
 
       // Determine colors
       const colors = getHexColors(hex);
@@ -176,8 +224,8 @@ export default function HexGrid({
       }
       ctx.stroke(path);
 
-      // Pulse glow for unmoved units and affordable capitals
-      if (isMyTurn && currentPlayerId) {
+      // Pulse glow for unmoved units and affordable capitals (skip during drag — shadowBlur is expensive)
+      if (isMyTurn && currentPlayerId && !isDraggingRef.current) {
         const shouldPulseUnit = hex.unit && hex.unit.owner === currentPlayerId && !hex.unit.hasMoved;
         const province = provinceByHexRef.current.get(`${hex.coord.q},${hex.coord.r}`);
         const shouldPulseCapital = !shouldPulseUnit && hex.structure?.isCapitol
@@ -200,22 +248,16 @@ export default function HexGrid({
       }
 
       // Draw emoji icons LAST so they always appear on top of overlays
+      const emojiSize = Math.round(size * 0.6);
+
       // Tree
       if (hex.hasTree && hex.terrain !== TerrainType.WATER) {
-        ctx.fillStyle = '#000';
-        ctx.font = `${Math.round(size * 0.6)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('🌲', cx, cy);
+        drawCachedEmoji(ctx, '🌲', emojiSize, cx, cy);
       }
 
       // Mountain indicator
       if (hex.terrain === TerrainType.MOUNTAIN) {
-        ctx.fillStyle = '#000';
-        ctx.font = `${Math.round(size * 0.6)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('⛰️', cx, cy);
+        drawCachedEmoji(ctx, '⛰️', emojiSize, cx, cy);
       }
 
       // Structure
@@ -225,22 +267,16 @@ export default function HexGrid({
           : hex.structure.type === StructureType.TOWER
             ? '🏰'
             : '🏠';
-        ctx.fillStyle = '#000';
-        ctx.font = `${Math.round(size * 0.6)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(emoji, cx, cy - size * 0.1);
+        drawCachedEmoji(ctx, emoji, emojiSize, cx, cy - size * 0.1);
 
         // Hourglass for newly built structures (can't jump through yet)
         if (hex.structure.builtThisTurn && hex.structure.owner === currentPlayerId) {
-          ctx.font = `${Math.round(size * 0.25)}px serif`;
-          ctx.fillText('⏳', cx - size * 0.3, cy - size * 0.35);
+          drawCachedEmoji(ctx, '⏳', Math.round(size * 0.25), cx - size * 0.3, cy - size * 0.35);
         }
 
         // Star icon for capitols
         if (hex.structure.isCapitol) {
-          ctx.font = `${Math.round(size * 0.3)}px serif`;
-          ctx.fillText('⭐', cx + size * 0.3, cy - size * 0.35);
+          drawCachedEmoji(ctx, '⭐', Math.round(size * 0.3), cx + size * 0.3, cy - size * 0.35);
         }
 
         // Gold badge on current player's capitols
@@ -267,11 +303,7 @@ export default function HexGrid({
       // Unit
       if (hex.unit) {
         const emoji = getUnitEmoji(hex.unit.type);
-        ctx.fillStyle = '#000';
-        ctx.font = `${Math.round(size * 0.6)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(emoji, cx, cy - size * 0.1);
+        drawCachedEmoji(ctx, emoji, emojiSize, cx, cy - size * 0.1);
 
         // Strength badge
         const badgeY = cy + size * 0.3;
@@ -284,15 +316,11 @@ export default function HexGrid({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(hex.unit.strength), cx, badgeY);
-
       }
 
       // Death marker (starvation)
       if (hex.deathMarker === 'starvation') {
-        ctx.font = `${Math.round(size * 0.55)}px serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('☠️', cx, cy);
+        drawCachedEmoji(ctx, '☠️', Math.round(size * 0.55), cx, cy);
       }
     }
 
@@ -315,10 +343,15 @@ export default function HexGrid({
         { dq: 1, dr: -1 },   // edge 5→0: northeast
       ];
 
+      // Batch all border edges into a single path (one stroke call instead of many)
+      ctx.beginPath();
       for (const hex of hexes) {
         if (hex.owner !== currentTurnPlayer) continue;
-        const { x: cx, y: cy } = hexToPixel(hex.coord.q, hex.coord.r, size);
-        const corners = getHexCorners(cx, cy, size);
+        const geo = getHexGeometry(hex.coord.q, hex.coord.r, size);
+        const { cx, cy, corners } = geo;
+        // Cull off-screen hexes for border drawing too
+        if (cx < viewLeft - margin || cx > viewRight + margin ||
+            cy < viewTop - margin || cy > viewBottom + margin) continue;
 
         for (let i = 0; i < 6; i++) {
           const dir = NEIGHBOR_DIRS[i];
@@ -326,17 +359,16 @@ export default function HexGrid({
           const nr = hex.coord.r + dir.dr;
           const neighbor = hexMapRef.current.get(`${nq},${nr}`);
 
-          // Draw edge if neighbor doesn't exist or isn't owned by same player
+          // Add edge if neighbor doesn't exist or isn't owned by same player
           if (!neighbor || neighbor.owner !== currentTurnPlayer) {
             const c1 = corners[i];
             const c2 = corners[(i + 1) % 6];
-            ctx.beginPath();
             ctx.moveTo(c1.x, c1.y);
             ctx.lineTo(c2.x, c2.y);
-            ctx.stroke();
           }
         }
       }
+      ctx.stroke();
     }
 
     ctx.restore();
@@ -353,25 +385,13 @@ export default function HexGrid({
       ctx.fillStyle = '#fff';
       ctx.fillText(text, 12, height - 14);
     }
-  }, [hexes, selectedHex, getHexColors, currentPlayerId, currentTurnPlayerId, provinces]);
+  }, [getHexColors]); // stable — reads all data from refs
 
   // On-demand rendering: schedule a single rAF draw (no continuous loop)
   const requestDraw = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => draw());
   }, [draw]);
-
-  // Redraw when game state or draw function changes
-  useEffect(() => {
-    requestDraw();
-  }, [requestDraw]);
-
-  // Pulse animation: redraw at ~20fps when it's the player's turn (for glow effects)
-  useEffect(() => {
-    if (currentTurnPlayerId !== currentPlayerId) return;
-    const id = setInterval(() => requestDraw(), 50);
-    return () => clearInterval(id);
-  }, [currentTurnPlayerId, currentPlayerId, requestDraw]);
 
   // Store draw in a ref so ResizeObserver always uses the latest without re-subscribing
   const drawRef = useRef(draw);
@@ -380,6 +400,7 @@ export default function HexGrid({
   // Fit camera to map bounds — reusable for initial load & orientation changes
   const fitCamera = useCallback(() => {
     const canvas = canvasRef.current;
+    const hexes = hexesRef.current;
     if (!canvas || hexes.length === 0) return;
 
     const landHexes = hexes.filter(h => h.terrain !== TerrainType.WATER);
@@ -412,7 +433,7 @@ export default function HexGrid({
     cam.zoom = zoom;
     cam.x = canvasW / 2 - gridCenterX * zoom;
     cam.y = canvasH / 2 - gridCenterY * zoom;
-  }, [hexes]);
+  }, []); // stable — reads hexes from ref
 
   // Track last container dimensions to detect orientation changes
   const lastSizeRef = useRef({ w: 0, h: 0 });
@@ -460,16 +481,92 @@ export default function HexGrid({
     return () => observer.disconnect();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fit camera to land hexes on initial load
+  // ── Zustand subscription: update refs and redraw without React re-renders ──
   useEffect(() => {
-    if (hasAutoFittedRef.current || hexes.length === 0) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    // Helper to rebuild lookup maps
+    const rebuildHexMap = (hexes: Hex[]) => {
+      const map = new Map<string, Hex>();
+      for (const hex of hexes) map.set(`${hex.coord.q},${hex.coord.r}`, hex);
+      hexMapRef.current = map;
+    };
+    const rebuildProvinceMap = (provinces: Province[]) => {
+      const map = new Map<string, Province>();
+      for (const prov of provinces) {
+        for (const h of prov.hexes) map.set(`${h.q},${h.r}`, prov);
+      }
+      provinceByHexRef.current = map;
+    };
+    const rebuildValidTargetSet = (moves: HexCoord[]) => {
+      const set = new Set<string>();
+      for (const t of moves) set.add(`${t.q},${t.r}`);
+      validTargetSetRef.current = set;
+    };
 
-    fitCamera();
-    hasAutoFittedRef.current = true;
+    // Initialize from current state
+    const init = useGameStore.getState();
+    const gs = init.gameState;
+    hexesRef.current = gs?.hexes ?? [];
+    selectedHexRef.current = init.selectedHex;
+    currentTurnPlayerIdRef.current = gs?.currentTurnPlayerId ?? null;
+    rebuildHexMap(hexesRef.current);
+    rebuildProvinceMap(gs?.provinces ?? []);
+    rebuildValidTargetSet(init.validMoves);
+
+    // Auto-fit camera on initial load
+    if (!hasAutoFittedRef.current && hexesRef.current.length > 0) {
+      fitCamera();
+      hasAutoFittedRef.current = true;
+    }
     requestDraw();
-  }, [hexes, requestDraw, fitCamera]);
+
+    // Subscribe to changes — updates refs and redraws, no React re-render
+    const unsub = useGameStore.subscribe((state, prevState) => {
+      const gs = state.gameState;
+      const prevGs = prevState.gameState;
+      let needDraw = false;
+
+      if (gs?.hexes !== prevGs?.hexes) {
+        hexesRef.current = gs?.hexes ?? [];
+        rebuildHexMap(hexesRef.current);
+        needDraw = true;
+        // Auto-fit on first hex data
+        if (!hasAutoFittedRef.current && hexesRef.current.length > 0) {
+          fitCamera();
+          hasAutoFittedRef.current = true;
+        }
+      }
+      if (state.selectedHex !== prevState.selectedHex) {
+        selectedHexRef.current = state.selectedHex;
+        needDraw = true;
+      }
+      if (state.validMoves !== prevState.validMoves) {
+        rebuildValidTargetSet(state.validMoves);
+        needDraw = true;
+      }
+      if (gs?.provinces !== prevGs?.provinces) {
+        rebuildProvinceMap(gs?.provinces ?? []);
+        needDraw = true;
+      }
+      if (gs?.currentTurnPlayerId !== prevGs?.currentTurnPlayerId) {
+        currentTurnPlayerIdRef.current = gs?.currentTurnPlayerId ?? null;
+        needDraw = true;
+      }
+
+      if (needDraw) requestDraw();
+    });
+
+    return unsub;
+  }, [requestDraw, fitCamera]);
+
+  // Pulse animation: redraw at ~7fps when it's the player's turn (for glow effects)
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (currentTurnPlayerIdRef.current === currentPlayerIdRef.current) {
+        requestDraw();
+      }
+    }, 150);
+    return () => clearInterval(id);
+  }, [requestDraw]);
 
   // ── Pointer events (unified mouse + touch, no 300ms delay) ──
   const pointerStartRef = useRef({ x: 0, y: 0 });
@@ -662,7 +759,7 @@ export default function HexGrid({
       />
     </div>
   );
-}
+});
 
 // ── Helpers ──
 
