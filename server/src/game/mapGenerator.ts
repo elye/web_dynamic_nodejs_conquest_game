@@ -126,8 +126,11 @@ function placeStartingPositions(
   }[] = [];
   const claimed = new Set<string>();
 
+  // Random rotation so players don't always start at the same positions
+  const randomOffset = Math.random() * 2 * Math.PI;
+
   for (let i = 0; i < playerCount; i++) {
-    const angle = (2 * Math.PI * i) / playerCount;
+    const angle = randomOffset + (2 * Math.PI * i) / playerCount;
 
     // Convert polar to axial: x = q + r/2, y = r * √3/2
     const x = targetDist * Math.cos(angle);
