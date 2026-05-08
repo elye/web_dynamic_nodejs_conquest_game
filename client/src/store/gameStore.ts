@@ -54,19 +54,77 @@ function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string)
   const sourceHex = hexMap.get(`${hex.q},${hex.r}`);
   const unitStrength = sourceHex?.unit?.strength ?? 0;
 
+  const results: HexCoord[] = [];
+  const resultSet = new Set<string>();
   const neighbors = getHexNeighbors(hex.q, hex.r);
-  return neighbors.filter((n) => {
+
+  // Collect all connected structures reachable from adjacent structures (flood-fill)
+  const structureSet = new Set<string>();
+  const structureQueue: HexCoord[] = [];
+  for (const n of neighbors) {
     const target = hexMap.get(`${n.q},${n.r}`);
-    if (!target || target.terrain === TerrainType.WATER) return false;
-    // Can't move onto own structure (capital, tower)
-    if (target.owner === currentPlayerId && target.structure) return false;
-    // Can't attack/capture if unit isn't strong enough
+    if (target && target.owner === currentPlayerId && target.structure && !target.structure.builtThisTurn) {
+      const key = `${n.q},${n.r}`;
+      if (!structureSet.has(key)) {
+        structureSet.add(key);
+        structureQueue.push(n);
+      }
+    }
+  }
+  // BFS through connected structures (only pre-existing, not built this turn)
+  while (structureQueue.length > 0) {
+    const current = structureQueue.shift()!;
+    const sNeighbors = getHexNeighbors(current.q, current.r);
+    for (const sn of sNeighbors) {
+      const key = `${sn.q},${sn.r}`;
+      if (structureSet.has(key)) continue;
+      const snHex = hexMap.get(key);
+      if (snHex && snHex.owner === currentPlayerId && snHex.structure && !snHex.structure.builtThisTurn) {
+        structureSet.add(key);
+        structureQueue.push(sn);
+      }
+    }
+  }
+
+  // Add all non-structure neighbors of the structure chain as jump-through targets
+  for (const structKey of structureSet) {
+    const [sq, sr] = structKey.split(',').map(Number);
+    const sNeighbors = getHexNeighbors(sq, sr);
+    for (const sn of sNeighbors) {
+      const key = `${sn.q},${sn.r}`;
+      if (key === `${hex.q},${hex.r}`) continue; // skip source
+      if (structureSet.has(key)) continue; // skip structures in chain
+      if (resultSet.has(key)) continue; // skip duplicates
+      const jumpTarget = hexMap.get(key);
+      if (!jumpTarget || jumpTarget.terrain === TerrainType.WATER) continue;
+      if (jumpTarget.owner === currentPlayerId && jumpTarget.structure) continue;
+      if (jumpTarget.owner !== null && jumpTarget.owner !== currentPlayerId) {
+        const defense = getHexDefense(jumpTarget, hexMap);
+        if (unitStrength <= defense) continue;
+      }
+      resultSet.add(key);
+      results.push(sn);
+    }
+  }
+
+  // Add normal adjacent moves (non-structure hexes)
+  for (const n of neighbors) {
+    const key = `${n.q},${n.r}`;
+    if (structureSet.has(key)) continue; // handled above via jump-through
+    if (resultSet.has(key)) continue;
+    const target = hexMap.get(key);
+    if (!target || target.terrain === TerrainType.WATER) continue;
+    // Can't land on own structures (even newly built ones)
+    if (target.owner === currentPlayerId && target.structure) continue;
     if (target.owner !== null && target.owner !== currentPlayerId) {
       const defense = getHexDefense(target, hexMap);
-      if (unitStrength <= defense) return false;
+      if (unitStrength <= defense) continue;
     }
-    return true;
-  });
+    resultSet.add(key);
+    results.push(n);
+  }
+
+  return results;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({

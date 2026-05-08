@@ -19,6 +19,7 @@ import {
   moveUnit,
   buyUnit,
   buildStructure,
+  upgradeStructure,
   retireUnit,
   endTurn,
   surrender,
@@ -305,6 +306,9 @@ function handleMessage(playerId: string, gameId: string, message: ClientMessage)
       case ClientMessageType.BUILD_STRUCTURE:
         handleBuildStructure(playerId, gameId, message.structureType, message.hex);
         break;
+      case ClientMessageType.UPGRADE_STRUCTURE:
+        handleUpgradeStructure(playerId, gameId, message.structureType, message.hex);
+        break;
       case ClientMessageType.RETIRE_UNIT:
         handleRetireUnit(playerId, gameId, message.unitId);
         break;
@@ -431,6 +435,28 @@ function handleBuildStructure(
   requireInProgress(gameState);
 
   buildStructure(gameState, playerId, structureType, hex);
+
+  sendToPlayer(playerId, {
+    type: ServerMessageType.GAME_STATE_DELTA,
+    delta: {
+      hexes: gameState.hexes,
+      provinces: gameState.provinces,
+      players: gameState.players,
+    },
+  });
+}
+
+function handleUpgradeStructure(
+  playerId: string,
+  gameId: string,
+  structureType: import('@conquest/shared').StructureType,
+  hex: import('@conquest/shared').HexCoord,
+): void {
+  const gameState = getGameState(gameId);
+  if (!gameState) throw new Error('Game not found');
+  requireInProgress(gameState);
+
+  upgradeStructure(gameState, playerId, structureType, hex);
 
   sendToPlayer(playerId, {
     type: ServerMessageType.GAME_STATE_DELTA,

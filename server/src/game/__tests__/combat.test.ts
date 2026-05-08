@@ -70,6 +70,7 @@ describe('getHexDefense', () => {
         owner: 'p2',
         hex: { q: 1, r: 0 },
         strength: STRUCTURE_STRENGTH[StructureType.TOWER],
+        isCapitol: false,
       },
     });
     const allHexes = [makeHex(0, 0), targetHex];
@@ -77,18 +78,19 @@ describe('getHexDefense', () => {
     expect(getHexDefense(targetHex, allHexes)).toBe(STRUCTURE_STRENGTH[StructureType.TOWER]);
   });
 
-  it('strong tower on hex adds +2', () => {
+  it('castle on hex adds +2', () => {
     const targetHex = makeHex(1, 0, 'p2', {
       structure: {
-        id: 'stower-1',
-        type: StructureType.STRONG_TOWER,
+        id: 'castle-1',
+        type: StructureType.CASTLE,
         owner: 'p2',
         hex: { q: 1, r: 0 },
-        strength: STRUCTURE_STRENGTH[StructureType.STRONG_TOWER],
+        strength: STRUCTURE_STRENGTH[StructureType.CASTLE],
+        isCapitol: false,
       },
     });
     const allHexes = [makeHex(0, 0), targetHex];
-    expect(getHexDefense(targetHex, allHexes)).toBe(STRUCTURE_STRENGTH[StructureType.STRONG_TOWER]);
+    expect(getHexDefense(targetHex, allHexes)).toBe(STRUCTURE_STRENGTH[StructureType.CASTLE]);
   });
 
   it('adjacent tower adds to defense', () => {
@@ -103,6 +105,7 @@ describe('getHexDefense', () => {
         owner: 'p2',
         hex: { q: 0, r: 0 },
         strength: STRUCTURE_STRENGTH[StructureType.TOWER],
+        isCapitol: false,
       },
     });
     const allHexes = [adjacentHex, targetHex];
@@ -124,6 +127,7 @@ describe('getHexDefense', () => {
         owner: 'p1',
         hex: { q: 0, r: 0 },
         strength: STRUCTURE_STRENGTH[StructureType.TOWER],
+        isCapitol: false,
       },
     });
     const allHexes = [adjacentHex, targetHex];
@@ -171,6 +175,7 @@ describe('canCapture', () => {
         owner: 'p2',
         hex: { q: 1, r: 0 },
         strength: STRUCTURE_STRENGTH[StructureType.TOWER], // 1
+        isCapitol: false,
       },
     });
     const allHexes = [makeHex(0, 0, 'p1'), targetHex];
@@ -186,6 +191,7 @@ describe('canCapture', () => {
         owner: 'p2',
         hex: { q: 1, r: 0 },
         strength: STRUCTURE_STRENGTH[StructureType.TOWER], // 1
+        isCapitol: false,
       },
     });
     const allHexes = [makeHex(0, 0, 'p1'), targetHex];

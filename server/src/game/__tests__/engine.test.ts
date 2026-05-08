@@ -5,6 +5,7 @@ import {
   moveUnit,
   buyUnit,
   buildStructure,
+  upgradeStructure,
   retireUnit,
   endTurn,
   surrender,
@@ -105,10 +106,11 @@ function createTestGameState(gameId: string = 'test-game'): GameState {
     makeHex(1, 0, 'p1', {
       structure: {
         id: 'cap-p1',
-        type: StructureType.CAPITAL,
+        type: StructureType.FARMHOUSE,
         owner: 'p1',
         hex: { q: 1, r: 0 },
-        strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+        isCapitol: true,
       },
     }),
     makeHex(-1, 0, 'p1'), // empty hex for building structures
@@ -118,10 +120,11 @@ function createTestGameState(gameId: string = 'test-game'): GameState {
     makeHex(2, 1, 'p2', {
       structure: {
         id: 'cap-p2',
-        type: StructureType.CAPITAL,
+        type: StructureType.FARMHOUSE,
         owner: 'p2',
         hex: { q: 2, r: 1 },
-        strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+        strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+        isCapitol: true,
       },
     }),
     makeHex(3, 0, 'p2'), // extra p2 hex for tests
@@ -132,7 +135,7 @@ function createTestGameState(gameId: string = 'test-game'): GameState {
     hexes: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: -1, r: 0 }],
     owner: 'p1',
     gold: 50,
-    income: 3,
+    income: 4, // 2 normal hexes + 1 farmhouse hex (x2)
     upkeep: UNIT_UPKEEP[UnitType.PEASANT],
   };
 
@@ -141,7 +144,7 @@ function createTestGameState(gameId: string = 'test-game'): GameState {
     hexes: [{ q: 2, r: 0 }, { q: 2, r: 1 }, { q: 3, r: 0 }],
     owner: 'p2',
     gold: 50,
-    income: 3,
+    income: 4, // 2 normal hexes + 1 farmhouse hex (x2)
     upkeep: UNIT_UPKEEP[UnitType.PEASANT],
   };
 
@@ -268,7 +271,7 @@ describe('startGame', () => {
     for (const province of state.provinces) {
       const capitalHex = state.hexes.find(
         (h) =>
-          h.structure?.type === StructureType.CAPITAL &&
+          h.structure?.isCapitol &&
           province.hexes.some((ph) => ph.q === h.coord.q && ph.r === h.coord.r),
       );
       if (!capitalHex) continue;
@@ -320,6 +323,48 @@ describe('moveUnit', () => {
     expect(() => moveUnit(gs, 'p1', 'u1', { q: 2, r: 1 })).toThrow('not adjacent');
   });
 
+  it('can jump through own structure to reach distance-2 hex', () => {
+    // p1 unit at (0,0), p1 structure at (1,0)
+    // (1,1) is distance 2 from (0,0) and adjacent to (1,0) — valid jump target
+    const result = moveUnit(gs, 'p1', 'u1', { q: 1, r: 1 });
+    const sourceHex = result.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0);
+    const targetHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 1);
+    expect(sourceHex!.unit).toBeNull();
+    expect(targetHex!.unit).not.toBeNull();
+    expect(targetHex!.unit!.id).toBe('u1');
+  });
+
+  it('can jump through a chain of connected structures', () => {
+    // Place a second structure adjacent to the first: (2,0) must be owned by p1
+    const hex2 = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    hex2.owner = 'p1';
+    hex2.unit = null;
+    hex2.structure = {
+      id: 'tower-chain',
+      type: StructureType.TOWER,
+      owner: 'p1',
+      hex: { q: 2, r: 0 },
+      strength: STRUCTURE_STRENGTH[StructureType.TOWER],
+      isCapitol: false,
+    };
+    // Update province to include (2,0)
+    const prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    prov.hexes.push({ q: 2, r: 0 });
+
+    // Add target hex at (3,0) — distance 3 from unit at (0,0)
+    gs.hexes.push(makeHex(3, 0, null)); // neutral hex adjacent to (2,0)
+    // Also add (2,1) as neutral for another jump target
+    gs.hexes.push(makeHex(2, 1, null));
+
+    // Unit at (0,0) should jump through (1,0)→(2,0) to reach (3,0)
+    const result = moveUnit(gs, 'p1', 'u1', { q: 3, r: 0 });
+    const sourceHex = result.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0);
+    const targetHex = result.hexes.find((h) => h.coord.q === 3 && h.coord.r === 0);
+    expect(sourceHex!.unit).toBeNull();
+    expect(targetHex!.unit).not.toBeNull();
+    expect(targetHex!.unit!.id).toBe('u1');
+  });
+
   it("can't move unit that already moved", () => {
     // Move once
     moveUnit(gs, 'p1', 'u1', { q: 0, r: 1 });
@@ -350,9 +395,9 @@ describe('moveUnit', () => {
   });
 
   it('captures enemy territory when stronger', () => {
-    // p2 has capital at (2,1) giving +2 defense to adjacent (2,0)
-    // p2 peasant (str 1) + capital defense (2) = defense 3
-    // Need Knight (str 4) to beat defense 3
+    // p2 has farmhouse capitol at (2,1) giving +0 defense to adjacent (2,0)
+    // p2 peasant (str 1) + farmhouse defense (0) = defense 1
+    // Need Spearman (str 2) or stronger to beat defense 1
     const srcHex = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0)!;
     srcHex.unit = null;
     const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
@@ -450,7 +495,7 @@ describe('buyUnit', () => {
     );
   });
 
-  it("can't buy on hex with structure", () => {
+  it('replaces structure when buying unit on hex with structure', () => {
     const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
     hex.structure = {
       id: 'struct-1',
@@ -458,9 +503,35 @@ describe('buyUnit', () => {
       owner: 'p1',
       hex: { q: -1, r: 0 },
       strength: STRUCTURE_STRENGTH[StructureType.TOWER],
+      isCapitol: false,
+    };
+    const result = buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
+    const placedHex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    expect(placedHex.structure).toBeNull();
+    expect(placedHex.unit).not.toBeNull();
+    expect(placedHex.unit!.type).toBe(UnitType.PEASANT);
+  });
+
+  it("can't replace a capitol structure with a unit", () => {
+    // Capitol is at (1,0)
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 })).toThrow(
+      'capitol',
+    );
+  });
+
+  it("can't replace a structure built this turn with a unit", () => {
+    const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    hex.structure = {
+      id: 'struct-new',
+      type: StructureType.FARMHOUSE,
+      owner: 'p1',
+      hex: { q: -1, r: 0 },
+      strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+      isCapitol: false,
+      builtThisTurn: true,
     };
     expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 })).toThrow(
-      'already has a structure',
+      'built this turn',
     );
   });
 
@@ -486,23 +557,45 @@ describe('buyUnit', () => {
     expect(placedHex!.hasTree).toBe(false);
   });
 
-  it('merges with existing unit on hex', () => {
-    // Place a peasant first, then buy another peasant on same hex
+  it('upgrades existing unit when buying higher tier', () => {
+    // Place a peasant, then upgrade to spearman
     const hex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
     hex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'existing-unit');
 
-    const result = buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 });
-    const mergedHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
-    expect(mergedHex!.unit!.type).toBe(UnitType.SPEARMAN);
+    const result = buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: 1, r: 0 });
+    const upgradedHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
+    expect(upgradedHex!.unit!.type).toBe(UnitType.SPEARMAN);
+  });
+
+  it('charges cost difference when upgrading unit', () => {
+    const hex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    hex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'existing-unit');
+    let prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    prov.gold = 50;
+    const goldBefore = prov.gold;
+
+    buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: 1, r: 0 });
+    prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    const expectedCost = UNIT_COST[UnitType.SPEARMAN] - UNIT_COST[UnitType.PEASANT];
+    expect(prov.gold).toBe(goldBefore - expectedCost);
+  });
+
+  it("can't downgrade a unit", () => {
+    const hex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    hex.unit = makeUnit('p1', 1, 0, UnitType.SPEARMAN, 'existing-unit');
+
+    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 })).toThrow(
+      'higher-tier',
+    );
   });
 
   it("can't promote a unit that has already moved", () => {
-    // Place a peasant that has already moved, then try to buy on same hex
+    // Place a peasant that has already moved, then try to upgrade
     const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
     hex.unit = makeUnit('p1', -1, 0, UnitType.PEASANT, 'moved-unit');
     hex.unit.hasMoved = true;
 
-    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 })).toThrow(
+    expect(() => buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: -1, r: 0 })).toThrow(
       'already acted this turn',
     );
   });
@@ -518,12 +611,12 @@ describe('buyUnit', () => {
     );
   });
 
-  it("can't move a unit that was just promoted via buy", () => {
-    // Place a peasant, promote it by buying another peasant on same hex
+  it("can't move a unit that was just upgraded via buy", () => {
+    // Place a peasant, upgrade it to spearman
     const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
     hex.unit = makeUnit('p1', -1, 0, UnitType.PEASANT, 'to-promote');
 
-    buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
+    buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: -1, r: 0 });
     expect(hex.unit!.type).toBe(UnitType.SPEARMAN);
     expect(hex.unit!.hasMoved).toBe(true);
 
@@ -532,8 +625,8 @@ describe('buyUnit', () => {
     );
   });
 
-  it("can't promote a unit that was merged via move", () => {
-    // Merge two peasants by moving, then try to buy-promote the merged unit
+  it("can't promote a unit that has already moved via merge", () => {
+    // Merge two peasants by moving, then try to buy-upgrade the merged unit
     const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
     midHex.structure = null;
     midHex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'merge-target');
@@ -542,7 +635,7 @@ describe('buyUnit', () => {
     expect(midHex.unit!.type).toBe(UnitType.SPEARMAN);
     expect(midHex.unit!.hasMoved).toBe(true);
 
-    expect(() => buyUnit(gs, 'p1', UnitType.PEASANT, { q: 1, r: 0 })).toThrow(
+    expect(() => buyUnit(gs, 'p1', UnitType.BARON, { q: 1, r: 0 })).toThrow(
       'already acted this turn',
     );
   });
@@ -565,12 +658,12 @@ describe('buildStructure', () => {
     expect(hex!.structure!.owner).toBe('p1');
   });
 
-  it('can build strong tower', () => {
+  it('can build castle', () => {
     gs.provinces.find((p) => p.owner === 'p1')!.gold = 100;
-    const result = buildStructure(gs, 'p1', StructureType.STRONG_TOWER, { q: -1, r: 0 });
+    const result = buildStructure(gs, 'p1', StructureType.CASTLE, { q: -1, r: 0 });
     const hex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0);
-    expect(hex!.structure!.type).toBe(StructureType.STRONG_TOWER);
-    expect(hex!.structure!.strength).toBe(STRUCTURE_STRENGTH[StructureType.STRONG_TOWER]);
+    expect(hex!.structure!.type).toBe(StructureType.CASTLE);
+    expect(hex!.structure!.strength).toBe(STRUCTURE_STRENGTH[StructureType.CASTLE]);
   });
 
   it('deducts gold from province', () => {
@@ -1024,7 +1117,7 @@ describe('Capital System', () => {
     for (const player of state.players) {
       const capitals = state.hexes.filter(
         (h) =>
-          h.structure?.type === StructureType.CAPITAL &&
+          h.structure?.isCapitol &&
           h.structure.owner === player.id,
       );
       expect(capitals.length).toBeGreaterThanOrEqual(1);
@@ -1035,15 +1128,15 @@ describe('Capital System', () => {
     const gs = createTestGameState('cap-recalc-test');
     // Remove p1's capital to test auto-placement
     const capHex = gs.hexes.find(
-      (h) => h.structure?.type === StructureType.CAPITAL && h.structure.owner === 'p1',
+      (h) => h.structure?.isCapitol && h.structure.owner === 'p1',
     )!;
     capHex.structure = null;
 
     recalculateAllProvinces(gs);
 
-    // After recalculation, p1's province (3 hexes) should get a new capital
+    // After recalculation, p1's province (3 hexes) should get a new capitol
     const p1Capitals = gs.hexes.filter(
-      (h) => h.structure?.type === StructureType.CAPITAL && h.structure?.owner === 'p1',
+      (h) => h.structure?.isCapitol && h.structure?.owner === 'p1',
     );
     expect(p1Capitals.length).toBe(1);
   });
@@ -1060,24 +1153,25 @@ describe('Capital System', () => {
     recalculateAllProvinces(gs);
 
     const p1Capitals = gs.hexes.filter(
-      (h) => h.structure?.type === StructureType.CAPITAL && h.structure?.owner === 'p1',
+      (h) => h.structure?.isCapitol && h.structure?.owner === 'p1',
     );
     expect(p1Capitals.length).toBe(0);
   });
 
-  it('splitting territory: capital fragment keeps all gold, new fragment gets 0', () => {
+  it('splitting territory: capitol fragment keeps all gold, new fragment gets 0', () => {
     // Create a linear territory: (-1,0) - (0,0) - (1,0) - (2,0) - (3,0)
-    // Capital on (1,0). Remove (0,0) to split into [-1,0] and [1,0, 2,0, 3,0]
+    // Capitol on (1,0). Remove (0,0) to split into [-1,0] and [1,0, 2,0, 3,0]
     const hexes: Hex[] = [
       makeHex(-1, 0, 'p1'),
       makeHex(0, 0, 'p1'),
       makeHex(1, 0, 'p1', {
         structure: {
           id: 'cap-split',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 1, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       makeHex(2, 0, 'p1'),
@@ -1188,45 +1282,47 @@ describe('Capital System', () => {
 
     moveUnit(gs, 'p1', 'knight-auto', { q: 2, r: 1 });
 
-    // p2 should still have remaining hexes with a new capital
+    // p2 should still have remaining hexes with a new capitol
     const p2Provinces = gs.provinces.filter((p) => p.owner === 'p2');
     const p2Capitals = gs.hexes.filter(
-      (h) => h.structure?.type === StructureType.CAPITAL && h.structure?.owner === 'p2',
+      (h) => h.structure?.isCapitol && h.structure?.owner === 'p2',
     );
 
-    // If p2 has a province with 2+ hexes, it should have a new capital
+    // If p2 has a province with 2+ hexes, it should have a new capitol
     const p2BigProvinces = p2Provinces.filter((p) => p.hexes.length >= 2);
     if (p2BigProvinces.length > 0) {
       expect(p2Capitals.length).toBeGreaterThanOrEqual(1);
     }
   });
 
-  it('merging territories combines gold and removes extra capital', () => {
-    // Two separate provinces for p1, each with a capital.
-    // Connecting them should merge gold and keep the richer capital.
+  it('merging territories combines gold and removes extra capitol', () => {
+    // Two separate provinces for p1, each with a capitol.
+    // Connecting them should merge gold and keep the richer capitol.
     const hexes: Hex[] = [
-      // Province A: (0,0) capital, (1,0)
+      // Province A: (0,0) capitol, (1,0)
       makeHex(0, 0, 'p1', {
         structure: {
           id: 'cap-a',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 0, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       makeHex(1, 0, 'p1'),
       // Gap at (2,0) — neutral, will be captured to merge
       makeHex(2, 0, null),
-      // Province B: (3,0), (4,0) capital
+      // Province B: (3,0), (4,0) capitol
       makeHex(3, 0, 'p1'),
       makeHex(4, 0, 'p1', {
         structure: {
           id: 'cap-b',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 4, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       // p2 hexes
@@ -1234,10 +1330,11 @@ describe('Capital System', () => {
       makeHex(1, 1, 'p2', {
         structure: {
           id: 'cap-p2-m',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p2',
           hex: { q: 1, r: 1 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
     ];
@@ -1299,22 +1396,22 @@ describe('Capital System', () => {
     // Gold should be combined: 30 + 50 = 80
     expect(p1Provs[0].gold).toBe(80);
 
-    // Only ONE capital should remain
+    // Only ONE capitol should remain
     const p1Capitals = gs.hexes.filter(
-      (h) => h.structure?.type === StructureType.CAPITAL && h.structure?.owner === 'p1',
+      (h) => h.structure?.isCapitol && h.structure?.owner === 'p1',
     );
     expect(p1Capitals).toHaveLength(1);
 
-    // The surviving capital should be the one from the richer province (prov-b at (4,0))
+    // The surviving capitol should be the one from the richer province (prov-b at (4,0))
     expect(p1Capitals[0].coord.q).toBe(4);
     expect(p1Capitals[0].coord.r).toBe(0);
   });
 
-  it('can only buy units in province with capital', () => {
+  it('can only buy units in province with capitol', () => {
     const gs = createTestGameState('cap-buy-test');
-    // Remove p1's capital
+    // Remove p1's capitol
     const capHex = gs.hexes.find(
-      (h) => h.structure?.type === StructureType.CAPITAL && h.structure.owner === 'p1',
+      (h) => h.structure?.isCapitol && h.structure.owner === 'p1',
     )!;
     capHex.structure = null;
 
@@ -1323,13 +1420,14 @@ describe('Capital System', () => {
     );
   });
 
-  it('capital provides no defense bonus', () => {
+  it('farmhouse capitol provides no defense bonus', () => {
     const gs = createTestGameState('cap-defense-test');
-    // Hex (1,0) has a capital. Check defense.
+    // Hex (1,0) has a farmhouse capitol. Check defense.
     const capHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
-    expect(capHex.structure?.type).toBe(StructureType.CAPITAL);
+    expect(capHex.structure?.type).toBe(StructureType.FARMHOUSE);
+    expect(capHex.structure?.isCapitol).toBe(true);
 
-    // getHexDefense should not include capital defense (0)
+    // getHexDefense should not include farmhouse defense (0)
     const defense = getHexDefense(capHex, gs.hexes);
     expect(defense).toBe(0);
   });
@@ -1346,15 +1444,15 @@ describe('auto-skip, elimination, and win condition', () => {
     const hexes: Hex[] = [
       makeHex(0, 0, 'p1', { unit: p1Unit }),
       makeHex(1, 0, 'p1', {
-        structure: { id: 'cap-p1-3p', type: StructureType.CAPITAL, owner: 'p1', hex: { q: 1, r: 0 }, strength: STRUCTURE_STRENGTH[StructureType.CAPITAL] },
+        structure: { id: 'cap-p1-3p', type: StructureType.FARMHOUSE, owner: 'p1', hex: { q: 1, r: 0 }, strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE], isCapitol: true },
       }),
       makeHex(2, 0, 'p2', { unit: p2Unit }),
       makeHex(2, 1, 'p2', {
-        structure: { id: 'cap-p2-3p', type: StructureType.CAPITAL, owner: 'p2', hex: { q: 2, r: 1 }, strength: STRUCTURE_STRENGTH[StructureType.CAPITAL] },
+        structure: { id: 'cap-p2-3p', type: StructureType.FARMHOUSE, owner: 'p2', hex: { q: 2, r: 1 }, strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE], isCapitol: true },
       }),
       makeHex(0, 1, 'p3', { unit: p3Unit }),
       makeHex(1, 1, 'p3', {
-        structure: { id: 'cap-p3-3p', type: StructureType.CAPITAL, owner: 'p3', hex: { q: 1, r: 1 }, strength: STRUCTURE_STRENGTH[StructureType.CAPITAL] },
+        structure: { id: 'cap-p3-3p', type: StructureType.FARMHOUSE, owner: 'p3', hex: { q: 1, r: 1 }, strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE], isCapitol: true },
       }),
     ];
 
@@ -1764,20 +1862,22 @@ describe('gold capture from enemy capitals', () => {
       makeHex(0, 0, 'p1', {
         structure: {
           id: 'cap-p1',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 0, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       makeHex(1, 0, 'p1', { unit: p1Unit }),
       makeHex(2, 0, 'p2', {
         structure: {
           id: 'cap-p2',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p2',
           hex: { q: 2, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       makeHex(3, 0, 'p2'),
@@ -1927,7 +2027,8 @@ describe('gold capture from enemy capitals', () => {
     const capitalHex = restored.hexes.find(
       (h) => h.coord.q === 2 && h.coord.r === 0,
     );
-    expect(capitalHex?.structure?.type).toBe(StructureType.CAPITAL);
+    expect(capitalHex?.structure?.type).toBe(StructureType.FARMHOUSE);
+    expect(capitalHex?.structure?.isCapitol).toBe(true);
   });
 });
 
@@ -2141,7 +2242,7 @@ describe('no-capital elimination', () => {
     // Verify p2 has hexes but no capital
     const p2Hexes = gs.hexes.filter((h) => h.owner === 'p2');
     expect(p2Hexes.length).toBeGreaterThan(0);
-    expect(p2Hexes.some((h) => h.structure?.type === StructureType.CAPITAL)).toBe(false);
+    expect(p2Hexes.some((h) => h.structure?.isCapitol)).toBe(false);
 
     // End p1's turn — checkEliminations should eliminate p2
     endTurn(gs);
@@ -2186,6 +2287,7 @@ describe('no-capital elimination', () => {
       owner: 'p2',
       hex: { q: 0, r: 1 },
       strength: STRUCTURE_STRENGTH[StructureType.TOWER],
+      isCapitol: false,
     };
 
     recalculateAllProvinces(gs);
@@ -2222,5 +2324,106 @@ describe('no-capital elimination', () => {
     expect(gs.players.find((p) => p.id === 'p2')!.isEliminated).toBe(true);
     expect(gs.status).toBe(GameStatus.FINISHED);
     expect(gs.winnerId).toBe('p1');
+  });
+});
+
+// ── upgradeStructure ──
+
+describe('upgradeStructure', () => {
+  let gs: GameState;
+
+  beforeEach(() => {
+    gs = createTestGameState('upgrade-test');
+  });
+
+  it('upgrades farmhouse to tower', () => {
+    // Build a farmhouse on (-1,0) first
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+
+    const result = upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+    const hex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    expect(hex.structure!.type).toBe(StructureType.TOWER);
+    expect(hex.structure!.strength).toBe(STRUCTURE_STRENGTH[StructureType.TOWER]);
+  });
+
+  it('upgrades farmhouse to castle', () => {
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+
+    const result = upgradeStructure(gs, 'p1', StructureType.CASTLE, { q: -1, r: 0 });
+    const hex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    expect(hex.structure!.type).toBe(StructureType.CASTLE);
+    expect(hex.structure!.strength).toBe(STRUCTURE_STRENGTH[StructureType.CASTLE]);
+  });
+
+  it('charges cost difference (not full price)', () => {
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    let prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    prov.gold = 50;
+    const goldBefore = prov.gold;
+
+    upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+
+    prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    const expectedCost = STRUCTURE_COST[StructureType.TOWER] - STRUCTURE_COST[StructureType.FARMHOUSE];
+    expect(prov.gold).toBe(goldBefore - expectedCost);
+  });
+
+  it('preserves isCapitol when upgrading capitol', () => {
+    // Capitol is at (1,0) as a farmhouse
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+
+    const result = upgradeStructure(gs, 'p1', StructureType.TOWER, { q: 1, r: 0 });
+    const hex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    expect(hex.structure!.type).toBe(StructureType.TOWER);
+    expect(hex.structure!.isCapitol).toBe(true);
+  });
+
+  it('recalculates income after upgrade (farmhouse loses x2 bonus)', () => {
+    // Build farmhouse on (-1,0) — income should increase
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    let prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    const incomeWithFarmhouse = prov.income;
+
+    prov.gold = 50;
+    upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+
+    // Re-fetch province after recalculation
+    prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    // After upgrading farmhouse to tower, income should decrease by 1
+    // (farmhouse gives x2 = 2 for that hex, tower gives 1)
+    expect(prov.income).toBe(incomeWithFarmhouse - 1);
+  });
+
+  it('buildStructure recalculates income (farmhouse adds x2 bonus)', () => {
+    const incomeBefore = gs.provinces.find((p) => p.owner === 'p1')!.income;
+
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+
+    // Re-fetch province after recalculation
+    const prov = gs.provinces.find((p) => p.owner === 'p1')!;
+    // Farmhouse gives x2 income for that hex (1 → 2), so +1 income
+    expect(prov.income).toBe(incomeBefore + 1);
+  });
+
+  it("can't downgrade a structure", () => {
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+    upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 50;
+    expect(() =>
+      upgradeStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 }),
+    ).toThrow();
+  });
+
+  it("can't upgrade with insufficient gold", () => {
+    buildStructure(gs, 'p1', StructureType.FARMHOUSE, { q: -1, r: 0 });
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 0;
+
+    expect(() =>
+      upgradeStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 }),
+    ).toThrow('Insufficient gold');
   });
 });

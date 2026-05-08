@@ -1,5 +1,5 @@
 import type { Hex, HexCoord, Province, GameState } from '@conquest/shared';
-import { StructureType, TerrainType } from '@conquest/shared';
+import { StructureType, TerrainType, STRUCTURE_STRENGTH } from '@conquest/shared';
 import { randomUUID } from 'node:crypto';
 import { coordKey, getHexNeighbors } from './mapGenerator.js';
 
@@ -24,7 +24,12 @@ export function calculateProvinceIncome(
   for (const coord of province.hexes) {
     const hex = lookup.get(coordKey(coord.q, coord.r));
     if (hex && !hex.hasTree) {
-      income += 1;
+      // Farmhouse provides x2 income on its hex
+      if (hex.structure?.type === StructureType.FARMHOUSE) {
+        income += 2;
+      } else {
+        income += 1;
+      }
     }
   }
   return income;
@@ -112,37 +117,34 @@ export function recalculateAllProvinces(gameState: GameState): void {
   for (const playerId of playerIds) {
     const playerProvinces = calculateProvinces(gameState.hexes, playerId);
 
-    // Build a set of old province hex→gold mappings to identify which new
-    // province inherited the capital (and therefore the gold).
     const oldPlayerProvinces = oldProvinces.filter(
       (p) => p.owner === playerId,
     );
 
-    // First: remove capitals from single-hex provinces BEFORE gold distribution
-    // (otherwise they inherit gold from old provinces then lose their capital)
+    // First: remove capitols from single-hex provinces BEFORE gold distribution
     for (const province of playerProvinces) {
       if (province.hexes.length < 2) {
         for (const coord of province.hexes) {
           const hex = lookup.get(coordKey(coord.q, coord.r));
-          if (hex?.structure?.type === StructureType.CAPITAL) {
-            hex.structure = null;
+          if (hex?.structure?.isCapitol) {
+            hex.structure.isCapitol = false;
           }
         }
       }
     }
 
-    // For each new province, find all capitals and sum gold from old provinces
+    // For each new province, find all capitols and sum gold from old provinces
     for (const province of playerProvinces) {
-      // Find all capital hexes in this new province
-      const capitalCoords: HexCoord[] = [];
+      // Find all capitol hexes in this new province
+      const capitolCoords: HexCoord[] = [];
       for (const coord of province.hexes) {
         const hex = lookup.get(coordKey(coord.q, coord.r));
-        if (hex?.structure?.type === StructureType.CAPITAL && hex.structure.owner === playerId) {
-          capitalCoords.push(coord);
+        if (hex?.structure?.isCapitol && hex.structure.owner === playerId) {
+          capitolCoords.push(coord);
         }
       }
 
-      if (capitalCoords.length > 0) {
+      if (capitolCoords.length > 0) {
         // Sum gold from ALL old provinces that contributed hexes to this new province
         let totalGold = 0;
         const matchedOldProvIds = new Set<string>();
@@ -157,109 +159,126 @@ export function recalculateAllProvinces(gameState: GameState): void {
         }
         province.gold = totalGold;
 
-        // If multiple capitals (from merged provinces), keep the one whose
-        // old province had the most gold and remove the others
-        if (capitalCoords.length > 1) {
-          let bestCapital: HexCoord = capitalCoords[0];
+        // If multiple capitols (from merged provinces), keep the one whose
+        // old province had the most gold and clear isCapitol from others
+        if (capitolCoords.length > 1) {
+          let bestCapitol: HexCoord = capitolCoords[0];
           let bestGold = -1;
-          for (const capCoord of capitalCoords) {
-            // Find which old province this capital belonged to
+          for (const capCoord of capitolCoords) {
             const oldProv = oldPlayerProvinces.find((op) =>
               op.hexes.some((h) => h.q === capCoord.q && h.r === capCoord.r),
             );
             const oldGold = oldProv?.gold ?? 0;
             if (oldGold > bestGold) {
               bestGold = oldGold;
-              bestCapital = capCoord;
+              bestCapitol = capCoord;
             }
           }
-          // Remove all capitals except the best one
-          for (const capCoord of capitalCoords) {
-            if (capCoord.q === bestCapital.q && capCoord.r === bestCapital.r) continue;
+          // Remove capitol flag from all except the best one (keep the structure)
+          for (const capCoord of capitolCoords) {
+            if (capCoord.q === bestCapitol.q && capCoord.r === bestCapitol.r) continue;
             const hex = lookup.get(coordKey(capCoord.q, capCoord.r));
-            if (hex) {
-              hex.structure = null;
+            if (hex?.structure) {
+              hex.structure.isCapitol = false;
             }
           }
         }
       } else {
-        // No capital — this is a split fragment. Gets 0 gold and a new capital.
+        // No capitol — this is a split fragment. Gets 0 gold and needs a new capitol.
         province.gold = 0;
-        // Auto-place a capital if 2+ hexes
         if (province.hexes.length >= 2) {
-          // Score a hex by how many of its neighbors are water or off-map (border)
-          const waterScore = (coord: HexCoord): number => {
-            let score = 0;
-            for (const n of getHexNeighbors(coord.q, coord.r)) {
-              const nHex = lookup.get(coordKey(n.q, n.r));
-              if (!nHex || nHex.terrain === TerrainType.WATER) {
-                score++;
-              }
-            }
-            return score;
-          };
+          // Try to promote the strongest existing structure to capitol first
+          const structureStrengthOrder = [StructureType.CASTLE, StructureType.TOWER, StructureType.FARMHOUSE];
+          let promoted = false;
 
-          // Collect empty hex candidates (no unit, no structure)
-          const emptyCandidates: HexCoord[] = [];
-          for (const coord of province.hexes) {
-            const hex = lookup.get(coordKey(coord.q, coord.r));
-            if (hex && !hex.unit && !hex.structure) {
-              emptyCandidates.push(coord);
-            }
-          }
-
-          let placed = false;
-          if (emptyCandidates.length > 0) {
-            // Pick the candidate with the highest water score
-            let bestCoord = emptyCandidates[0];
-            let bestScore = waterScore(bestCoord);
-            for (let i = 1; i < emptyCandidates.length; i++) {
-              const s = waterScore(emptyCandidates[i]);
-              if (s > bestScore) {
-                bestScore = s;
-                bestCoord = emptyCandidates[i];
-              }
-            }
-            const hex = lookup.get(coordKey(bestCoord.q, bestCoord.r))!;
-            hex.hasTree = false;
-            hex.structure = {
-              id: randomUUID(),
-              type: StructureType.CAPITAL,
-              owner: playerId,
-              hex: bestCoord,
-              strength: 2,
-            };
-            placed = true;
-          }
-
-          // If no completely empty hex, place on a hex with a unit but no structure
-          if (!placed) {
-            const unitCandidates: HexCoord[] = [];
+          for (const sType of structureStrengthOrder) {
+            if (promoted) break;
             for (const coord of province.hexes) {
               const hex = lookup.get(coordKey(coord.q, coord.r));
-              if (hex && !hex.structure) {
-                unitCandidates.push(coord);
+              if (hex?.structure?.type === sType && hex.structure.owner === playerId) {
+                hex.structure.isCapitol = true;
+                promoted = true;
+                break;
               }
             }
-            if (unitCandidates.length > 0) {
-              let bestCoord = unitCandidates[0];
+          }
+
+          // If no existing structure, place a new Farmhouse capitol
+          if (!promoted) {
+            const waterScore = (coord: HexCoord): number => {
+              let score = 0;
+              for (const n of getHexNeighbors(coord.q, coord.r)) {
+                const nHex = lookup.get(coordKey(n.q, n.r));
+                if (!nHex || nHex.terrain === TerrainType.WATER) {
+                  score++;
+                }
+              }
+              return score;
+            };
+
+            // Collect empty hex candidates (no unit, no structure)
+            const emptyCandidates: HexCoord[] = [];
+            for (const coord of province.hexes) {
+              const hex = lookup.get(coordKey(coord.q, coord.r));
+              if (hex && !hex.unit && !hex.structure) {
+                emptyCandidates.push(coord);
+              }
+            }
+
+            let placed = false;
+            if (emptyCandidates.length > 0) {
+              let bestCoord = emptyCandidates[0];
               let bestScore = waterScore(bestCoord);
-              for (let i = 1; i < unitCandidates.length; i++) {
-                const s = waterScore(unitCandidates[i]);
+              for (let i = 1; i < emptyCandidates.length; i++) {
+                const s = waterScore(emptyCandidates[i]);
                 if (s > bestScore) {
                   bestScore = s;
-                  bestCoord = unitCandidates[i];
+                  bestCoord = emptyCandidates[i];
                 }
               }
               const hex = lookup.get(coordKey(bestCoord.q, bestCoord.r))!;
               hex.hasTree = false;
               hex.structure = {
                 id: randomUUID(),
-                type: StructureType.CAPITAL,
+                type: StructureType.FARMHOUSE,
                 owner: playerId,
                 hex: bestCoord,
-                strength: 2,
+                strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+                isCapitol: true,
               };
+              placed = true;
+            }
+
+            // If no completely empty hex, place on a hex with a unit but no structure
+            if (!placed) {
+              const unitCandidates: HexCoord[] = [];
+              for (const coord of province.hexes) {
+                const hex = lookup.get(coordKey(coord.q, coord.r));
+                if (hex && !hex.structure) {
+                  unitCandidates.push(coord);
+                }
+              }
+              if (unitCandidates.length > 0) {
+                let bestCoord = unitCandidates[0];
+                let bestScore = waterScore(bestCoord);
+                for (let i = 1; i < unitCandidates.length; i++) {
+                  const s = waterScore(unitCandidates[i]);
+                  if (s > bestScore) {
+                    bestScore = s;
+                    bestCoord = unitCandidates[i];
+                  }
+                }
+                const hex = lookup.get(coordKey(bestCoord.q, bestCoord.r))!;
+                hex.hasTree = false;
+                hex.structure = {
+                  id: randomUUID(),
+                  type: StructureType.FARMHOUSE,
+                  owner: playerId,
+                  hex: bestCoord,
+                  strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+                  isCapitol: true,
+                };
+              }
             }
           }
         }

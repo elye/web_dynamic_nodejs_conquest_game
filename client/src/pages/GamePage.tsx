@@ -173,13 +173,25 @@ export default function GamePage() {
 
   const handleBuildStructure = useCallback(
     (structureType: StructureType, hex: HexCoord) => {
-      sendMessage({
-        type: ClientMessageType.BUILD_STRUCTURE,
-        structureType,
-        hex,
-      });
+      // Check if hex already has a structure — if so, upgrade instead of build
+      const targetHex = gameState?.hexes.find(
+        (h) => h.coord.q === hex.q && h.coord.r === hex.r,
+      );
+      if (targetHex?.structure) {
+        sendMessage({
+          type: ClientMessageType.UPGRADE_STRUCTURE,
+          structureType,
+          hex,
+        });
+      } else {
+        sendMessage({
+          type: ClientMessageType.BUILD_STRUCTURE,
+          structureType,
+          hex,
+        });
+      }
     },
-    [sendMessage],
+    [sendMessage, gameState],
   );
 
   const handleEndTurn = useCallback(() => {

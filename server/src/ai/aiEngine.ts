@@ -20,6 +20,7 @@ import {
   moveUnit,
   buyUnit,
   buildStructure,
+  upgradeStructure,
   retireUnit,
   endTurn,
 } from '../game/engine.js';
@@ -86,15 +87,67 @@ function getValidMoves(gameState: GameState, playerId: string): UnitMove[] {
 
   for (const { unit, hex: sourceHex } of units) {
     const neighbors = getHexNeighbors(sourceHex.coord.q, sourceHex.coord.r);
+    const moveSet = new Set<string>();
+
+    // BFS through connected structures for jump-through (only pre-existing structures)
+    const structureSet = new Set<string>();
+    const structureQueue: HexCoord[] = [];
     for (const nc of neighbors) {
       const targetHex = lookup.get(coordKey(nc.q, nc.r));
+      if (targetHex && targetHex.owner === playerId && targetHex.structure && !targetHex.structure.builtThisTurn) {
+        const key = coordKey(nc.q, nc.r);
+        structureSet.add(key);
+        structureQueue.push(nc);
+      }
+    }
+    while (structureQueue.length > 0) {
+      const current = structureQueue.shift()!;
+      for (const cn of getHexNeighbors(current.q, current.r)) {
+        const key = coordKey(cn.q, cn.r);
+        if (structureSet.has(key)) continue;
+        const h = lookup.get(key);
+        if (h && h.owner === playerId && h.structure && !h.structure.builtThisTurn) {
+          structureSet.add(key);
+          structureQueue.push(cn);
+        }
+      }
+    }
+
+    // Add jump-through destinations (non-structure neighbors of the chain)
+    for (const structKey of structureSet) {
+      const [sq, sr] = structKey.split(',').map(Number);
+      for (const sn of getHexNeighbors(sq, sr)) {
+        const key = coordKey(sn.q, sn.r);
+        if (key === coordKey(sourceHex.coord.q, sourceHex.coord.r)) continue;
+        if (structureSet.has(key)) continue;
+        if (moveSet.has(key)) continue;
+        const jumpTarget = lookup.get(key);
+        if (!jumpTarget || jumpTarget.terrain === TerrainType.WATER) continue;
+        if (jumpTarget.owner === playerId && jumpTarget.structure) continue;
+        if (jumpTarget.owner === playerId && !jumpTarget.unit) {
+          moveSet.add(key);
+          moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
+        } else if (jumpTarget.owner === null) {
+          moveSet.add(key);
+          moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
+        } else if (jumpTarget.owner !== playerId) {
+          if (canCapture(unit, jumpTarget, gameState.hexes)) {
+            moveSet.add(key);
+            moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
+          }
+        }
+      }
+    }
+
+    // Normal adjacent moves (non-structure hexes)
+    for (const nc of neighbors) {
+      const key = coordKey(nc.q, nc.r);
+      if (structureSet.has(key)) continue;
+      if (moveSet.has(key)) continue;
+      const targetHex = lookup.get(key);
       if (!targetHex || targetHex.terrain === TerrainType.WATER) continue;
 
-      // Check if we can actually move there
       if (targetHex.owner === playerId) {
-        // Can't move onto own structure (capital, tower)
-        if (targetHex.structure) continue;
-        // Can move to own territory if no unit or mergeable
         if (!targetHex.unit) {
           moves.push({ unitId: unit.id, from: sourceHex.coord, to: nc });
         }
@@ -229,7 +282,7 @@ function getEmptyOwnedHexes(gameState: GameState, playerId: string): Hex[] {
     (h) =>
       h.owner === playerId &&
       !h.unit &&
-      (!h.structure || h.structure.type === StructureType.CAPITAL) &&
+      (!h.structure || h.structure.isCapitol) &&
       h.terrain !== TerrainType.WATER,
   );
 }
@@ -237,7 +290,7 @@ function getEmptyOwnedHexes(gameState: GameState, playerId: string): Hex[] {
 function findCapitalHexes(gameState: GameState, playerId: string): Hex[] {
   return gameState.hexes.filter(
     (h) =>
-      h.structure?.type === StructureType.CAPITAL &&
+      h.structure?.isCapitol &&
       h.structure.owner === playerId,
   );
 }
@@ -245,7 +298,7 @@ function findCapitalHexes(gameState: GameState, playerId: string): Hex[] {
 function findEnemyCapitalHexes(gameState: GameState, playerId: string): Hex[] {
   return gameState.hexes.filter(
     (h) =>
-      h.structure?.type === StructureType.CAPITAL &&
+      h.structure?.isCapitol &&
       h.structure.owner !== playerId &&
       h.owner !== playerId &&
       h.owner !== null,
@@ -412,6 +465,77 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
     }
   }
 
+  // Build farmhouses on interior hexes for income boost
+  // Farmhouses provide x2 income, prevent tree growth, and enable jump-through movement
+  for (const province of provinces) {
+    if (province.gold < STRUCTURE_COST[StructureType.FARMHOUSE]) continue;
+    // Only build farmhouse if province has decent income headroom
+    if (province.gold - STRUCTURE_COST[StructureType.FARMHOUSE] < province.upkeep) continue;
+
+    const interiorHexes = province.hexes
+      .map((c) => gameState.hexes.find((h) => h.coord.q === c.q && h.coord.r === c.r))
+      .filter((h): h is Hex => !!h && !h.unit && !h.structure)
+      .filter((h) => {
+        // Interior = all land neighbors are owned by same player
+        const neighbors = getHexNeighbors(h.coord.q, h.coord.r);
+        return neighbors.every((nc) => {
+          const n = lookup.get(coordKey(nc.q, nc.r));
+          return !n || n.terrain === TerrainType.WATER || n.owner === playerId;
+        });
+      });
+
+    // Build multiple farmhouses if affordable (they pay for themselves quickly)
+    for (const hex of interiorHexes) {
+      const prov = gameState.provinces.find((p) => p.owner === playerId && p.hexes.some(
+        (c) => c.q === hex.coord.q && c.r === hex.coord.r,
+      ));
+      if (!prov || prov.gold < STRUCTURE_COST[StructureType.FARMHOUSE]) break;
+      if (prov.gold - STRUCTURE_COST[StructureType.FARMHOUSE] < prov.upkeep) break;
+      try {
+        buildStructure(gameState, playerId, StructureType.FARMHOUSE, hex.coord);
+        broadcastDelta(gameState);
+        await randomDelay();
+      } catch {
+        break;
+      }
+    }
+  }
+
+  // Upgrade existing structures if we have surplus gold
+  for (const province of provinces) {
+    if (province.gold < STRUCTURE_COST[StructureType.CASTLE] - STRUCTURE_COST[StructureType.TOWER]) continue;
+
+    const upgradeable = province.hexes
+      .map((c) => gameState.hexes.find((h) => h.coord.q === c.q && h.coord.r === c.r))
+      .filter((h): h is Hex => !!h && !!h.structure && h.structure.owner === playerId)
+      .filter((h) => h.structure!.type !== StructureType.CASTLE);
+
+    for (const hex of upgradeable) {
+      const currentType = hex.structure!.type;
+      const nextType = currentType === StructureType.FARMHOUSE ? StructureType.TOWER : StructureType.CASTLE;
+      const cost = STRUCTURE_COST[nextType] - STRUCTURE_COST[currentType];
+      if (province.gold < cost) continue;
+      // Only upgrade border structures (not interior farmhouses — those are for income)
+      if (currentType === StructureType.FARMHOUSE && !hex.structure!.isCapitol) {
+        // Check if it's on the border
+        const neighbors = getHexNeighbors(hex.coord.q, hex.coord.r);
+        const isBorder = neighbors.some((nc) => {
+          const n = lookup.get(coordKey(nc.q, nc.r));
+          return n && n.terrain !== TerrainType.WATER && n.owner !== playerId;
+        });
+        if (!isBorder) continue;
+      }
+      try {
+        upgradeStructure(gameState, playerId, nextType, hex.coord);
+        broadcastDelta(gameState);
+        await randomDelay();
+        break;
+      } catch {
+        // Skip
+      }
+    }
+  }
+
   // Move units toward nearest unowned/enemy land
   const moves = getValidMoves(gameState, playerId);
 
@@ -425,7 +549,7 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
       else if (targetHex.owner !== playerId) {
         score = 8; // Enemy capture
         // Bonus for attacking enemy capitals
-        if (targetHex.structure?.type === StructureType.CAPITAL) {
+        if (targetHex.structure?.isCapitol) {
           score += 10;
           // Extra bonus proportional to province gold (every 5 gold = +1)
           const province = gameState.provinces.find((p) =>
@@ -609,7 +733,7 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
         // Bonus for weak enemies
         if (defense === 0) score += 5;
         // HIGH bonus for capturing enemy capitals
-        if (targetHex.structure?.type === StructureType.CAPITAL) {
+        if (targetHex.structure?.isCapitol) {
           score += 25;
           // Extra bonus proportional to province gold (every 3 gold = +1)
           const province = gameState.provinces.find((p) =>
@@ -683,8 +807,8 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
     if (!province) continue;
 
     const structureType =
-      province.gold >= STRUCTURE_COST[StructureType.STRONG_TOWER] && candidate.score >= 8
-        ? StructureType.STRONG_TOWER
+      province.gold >= STRUCTURE_COST[StructureType.CASTLE] && candidate.score >= 8
+        ? StructureType.CASTLE
         : StructureType.TOWER;
 
     if (province.gold < STRUCTURE_COST[structureType]) continue;
@@ -698,15 +822,16 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
     }
   }
 
-  // 5. Merge units for tougher opponents (buy onto existing units)
+  // 5. Upgrade units facing strong opponents (buy higher tier directly)
+  const UNIT_UPGRADE_ORDER = [UnitType.PEASANT, UnitType.SPEARMAN, UnitType.BARON, UnitType.KNIGHT];
   const playerUnits = getPlayerUnits(gameState, playerId);
   for (const { unit, hex } of playerUnits) {
-    if (unit.type === UnitType.KNIGHT) continue; // Already max
+    if (unit.type === UnitType.KNIGHT || unit.hasMoved) continue; // Already max or already acted
 
     const province = findProvinceForHex(gameState.provinces, hex.coord, playerId);
     if (!province) continue;
 
-    // Only merge on frontline hexes facing strong enemies
+    // Only upgrade on frontline hexes facing strong enemies
     const neighbors = getHexNeighbors(hex.coord.q, hex.coord.r);
     const facesStrongEnemy = neighbors.some((nc) => {
       const n = lookup.get(coordKey(nc.q, nc.r));
@@ -715,18 +840,20 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
 
     if (!facesStrongEnemy) continue;
 
-    // Try to merge with a Peasant
-    if (province.gold >= UNIT_COST[UnitType.PEASANT]) {
-      const newUpkeep = province.upkeep - unit.upkeep; // Old unit upkeep removed after merge
-      const mergedUpkeep = UNIT_UPKEEP[unit.type === UnitType.PEASANT ? UnitType.SPEARMAN : unit.type === UnitType.SPEARMAN ? UnitType.BARON : UnitType.KNIGHT];
-      if (province.gold - UNIT_COST[UnitType.PEASANT] + province.income - newUpkeep - mergedUpkeep >= 0) {
-        try {
-          buyUnit(gameState, playerId, UnitType.PEASANT, hex.coord);
-          broadcastDelta(gameState);
-          await randomDelay();
-        } catch {
-          // Skip
-        }
+    // Find the next tier up
+    const currentIdx = UNIT_UPGRADE_ORDER.indexOf(unit.type);
+    const nextType = UNIT_UPGRADE_ORDER[currentIdx + 1];
+    if (!nextType) continue;
+
+    const upgradeCost = UNIT_COST[nextType] - UNIT_COST[unit.type];
+    const newUpkeep = province.upkeep - unit.upkeep + UNIT_UPKEEP[nextType];
+    if (province.gold >= upgradeCost && province.gold - upgradeCost + province.income - newUpkeep >= 0) {
+      try {
+        buyUnit(gameState, playerId, nextType, hex.coord);
+        broadcastDelta(gameState);
+        await randomDelay();
+      } catch {
+        // Skip
       }
     }
   }

@@ -215,53 +215,99 @@ export default function GameBoard({
                   </span>
                 )}
 
-                {/* Buy unit buttons */}
-                <ActionButton
-                  emoji="🧑‍🌾"
-                  cost={UNIT_COST[UnitTypeEnum.PEASANT]}
-                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.PEASANT]}
-                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.PEASANT, selectedHex)}
-                  title="Buy Peasant"
-                />
-                <ActionButton
-                  emoji="💂"
-                  cost={UNIT_COST[UnitTypeEnum.SPEARMAN]}
-                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.SPEARMAN]}
-                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.SPEARMAN, selectedHex)}
-                  title="Buy Spearman"
-                />
-                <ActionButton
-                  emoji="🤴"
-                  cost={UNIT_COST[UnitTypeEnum.BARON]}
-                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.BARON]}
-                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.BARON, selectedHex)}
-                  title="Buy Baron"
-                />
-                <ActionButton
-                  emoji="🐴"
-                  cost={UNIT_COST[UnitTypeEnum.KNIGHT]}
-                  disabled={!isMyTurn || !hasHex || gold < UNIT_COST[UnitTypeEnum.KNIGHT]}
-                  onClick={() => selectedHex && onBuyUnit!(UnitTypeEnum.KNIGHT, selectedHex)}
-                  title="Buy Knight"
-                />
+                {/* Buy/Upgrade unit buttons */}
+                {(() => {
+                  const existingUnit = selectedHexData?.unit;
+                  const existingUnitType = existingUnit?.type as UnitTypeEnum | undefined;
+                  const upgradeOrder = [UnitTypeEnum.PEASANT, UnitTypeEnum.SPEARMAN, UnitTypeEnum.BARON, UnitTypeEnum.KNIGHT];
+                  const currentIdx = existingUnitType ? upgradeOrder.indexOf(existingUnitType) : -1;
+                  const hasStructure = !!selectedHexData?.structure;
+                  const isCapitol = !!selectedHexData?.structure?.isCapitol;
+                  const isBuiltThisTurn = !!selectedHexData?.structure?.builtThisTurn;
+                  // Can't replace capitol or just-built structures
+                  const canReplaceStructure = hasStructure && !isCapitol && !isBuiltThisTurn;
+
+                  const buttons = [
+                    { emoji: '🧑‍🌾', type: UnitTypeEnum.PEASANT, label: 'Peasant' },
+                    { emoji: '💂', type: UnitTypeEnum.SPEARMAN, label: 'Spearman' },
+                    { emoji: '🤴', type: UnitTypeEnum.BARON, label: 'Baron' },
+                    { emoji: '🐴', type: UnitTypeEnum.KNIGHT, label: 'Knight' },
+                  ];
+
+                  return buttons.map((b) => {
+                    const targetIdx = upgradeOrder.indexOf(b.type);
+                    // Determine if this button is blocked
+                    const isLowerTier = existingUnit && targetIdx <= currentIdx;
+                    const isBlockedByStructure = !existingUnit && hasStructure && !canReplaceStructure;
+
+                    const cost = existingUnit && !isLowerTier
+                      ? UNIT_COST[b.type] - UNIT_COST[existingUnitType!]
+                      : UNIT_COST[b.type];
+                    const title = existingUnit && !isLowerTier
+                      ? `Upgrade to ${b.label}`
+                      : canReplaceStructure
+                        ? `Replace structure with ${b.label}`
+                        : `Buy ${b.label}`;
+
+                    const handleClick = () => {
+                      if (!selectedHex) return;
+                      if (!existingUnit && canReplaceStructure) {
+                        if (!window.confirm(`This will destroy the structure on this hex. Continue?`)) return;
+                      }
+                      onBuyUnit!(b.type, selectedHex);
+                    };
+
+                    return (
+                      <ActionButton
+                        key={b.type}
+                        emoji={b.emoji}
+                        cost={cost}
+                        disabled={!isMyTurn || !hasHex || gold < cost || !!isLowerTier || !!isBlockedByStructure}
+                        onClick={handleClick}
+                        title={title}
+                      />
+                    );
+                  });
+                })()}
 
                 <div className="w-px h-8 bg-slate-600 mx-1" />
 
-                {/* Build structure buttons */}
-                <ActionButton
-                  emoji="🏰"
-                  cost={STRUCTURE_COST[StructureTypeEnum.TOWER]}
-                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.TOWER]}
-                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.TOWER, selectedHex)}
-                  title="Build Tower"
-                />
-                <ActionButton
-                  emoji="🏯"
-                  cost={STRUCTURE_COST[StructureTypeEnum.STRONG_TOWER]}
-                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.STRONG_TOWER]}
-                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.STRONG_TOWER, selectedHex)}
-                  title="Build Strong Tower"
-                />
+                {/* Build/Upgrade structure buttons */}
+                {(() => {
+                  const existingStructure = selectedHexData?.structure;
+                  const existingType = existingStructure?.type as StructureTypeEnum | undefined;
+                  const upgradeOrder = [StructureTypeEnum.FARMHOUSE, StructureTypeEnum.TOWER, StructureTypeEnum.CASTLE];
+                  const currentIdx = existingType ? upgradeOrder.indexOf(existingType) : -1;
+                  const hasUnit = !!selectedHexData?.unit;
+
+                  const buttons = [
+                    { emoji: '🏠', type: StructureTypeEnum.FARMHOUSE, label: 'Farmhouse' },
+                    { emoji: '🏰', type: StructureTypeEnum.TOWER, label: 'Tower' },
+                    { emoji: '🏯', type: StructureTypeEnum.CASTLE, label: 'Castle' },
+                  ];
+
+                  return buttons.map((b) => {
+                    const targetIdx = upgradeOrder.indexOf(b.type);
+                    const isLowerTier = existingStructure && targetIdx <= currentIdx;
+                    const isBlockedByUnit = !existingStructure && hasUnit;
+
+                    const cost = existingStructure && !isLowerTier
+                      ? STRUCTURE_COST[b.type] - STRUCTURE_COST[existingType!]
+                      : STRUCTURE_COST[b.type];
+                    const title = existingStructure && !isLowerTier ? `Upgrade to ${b.label}` : `Build ${b.label}`;
+
+                    return (
+                      <ActionButton
+                        key={b.type}
+                        emoji={b.emoji}
+                        cost={cost}
+                        disabled={!isMyTurn || !hasHex || gold < cost || !!isLowerTier || !!isBlockedByUnit}
+                        onClick={() => selectedHex && onBuildStructure!(b.type, selectedHex)}
+                        title={title}
+                      />
+                    );
+                  });
+                })()}
 
                 <div className="w-px h-8 bg-slate-600 mx-1" />
 
@@ -276,7 +322,7 @@ export default function GameBoard({
                   title="Retire Unit (refund half cost)"
                   className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
-                  <span className="text-base leading-none">🏠</span>
+                  <span className="text-base leading-none">⬇️</span>
                   <span className="text-[10px] text-slate-300 mt-0.5">Retire</span>
                 </button>
 
@@ -374,6 +420,6 @@ function hasCapitalInProvince(province: Province, gameState: GameState): boolean
     const hex = gameState.hexes.find(
       (h) => h.coord.q === coord.q && h.coord.r === coord.r,
     );
-    return hex?.structure?.type === StructureTypeEnum.CAPITAL;
+    return hex?.structure?.isCapitol;
   });
 }

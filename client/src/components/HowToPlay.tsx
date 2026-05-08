@@ -38,21 +38,22 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
             <h3 className="text-white font-semibold mb-1">⚔️ Your Turn</h3>
             <ol className="list-decimal list-inside space-y-1">
               <li><strong>Move units</strong> — click a unit, then an adjacent hex.</li>
-              <li><strong>Buy units</strong> — select a hex in a province with a 🏛️ capital.</li>
-              <li><strong>Build towers</strong> — select an empty owned hex, click tower button.</li>
+              <li><strong>Buy units</strong> — select a hex in a province with a ⭐ capitol.</li>
+              <li><strong>Build structures</strong> — select an empty owned hex, click structure button.</li>
               <li>End turn when done.</li>
             </ol>
           </section>
 
-          {/* Capitals */}
+          {/* Capitols */}
           <section>
-            <h3 className="text-white font-semibold mb-1">🏛️ Capitals</h3>
+            <h3 className="text-white font-semibold mb-1">⭐ Capitols</h3>
             <ul className="list-disc list-inside space-y-1">
-              <li>Every province (2+ connected hexes) gets a capital automatically.</li>
-              <li>You need a capital to buy units in that province.</li>
-              <li>Capturing an enemy capital transfers its gold to your richest province at end of turn.</li>
-              <li>If territory splits, the fragment with the capital keeps all gold. The new fragment gets a new capital with 0 gold.</li>
-              <li>Capitals have no defense bonus — protect them with towers and units!</li>
+              <li>Every province (2+ connected hexes) gets a capitol automatically (Farmhouse with ⭐).</li>
+              <li>You need a capitol to buy units in that province.</li>
+              <li>Capitols can be upgraded (Farmhouse → Tower → Castle) for the price difference.</li>
+              <li>Capturing an enemy capitol transfers its gold to your richest province at end of turn.</li>
+              <li>If territory splits, the fragment without a capitol promotes its strongest structure to capitol. If none exist, a new Farmhouse capitol is placed.</li>
+              <li>Capitol defense depends on its structure type (0/1/2).</li>
             </ul>
           </section>
 
@@ -75,14 +76,15 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
                 <tr><td className="py-1">🐴 Knight</td><td>4</td><td>40g</td><td>54g</td></tr>
               </tbody>
             </table>
-            <p className="mt-1 text-xs text-gray-400">Merge two units on the same hex to upgrade (e.g. Peasant + Peasant = Spearman).</p>
-            <p className="mt-1 text-xs text-gray-400">🏠 <strong>Retire</strong> a unit to remove it and reclaim half its cost (5g / 10g / 15g / 20g). Also reduces upkeep.</p>
+            <p className="mt-1 text-xs text-gray-400">Click a higher-tier unit button to upgrade an existing unit for the cost difference (e.g. upgrade Peasant → Spearman for 10g).</p>
+            <p className="mt-1 text-xs text-gray-400">Move a unit onto a friendly unit to merge them (combined cost determines result).</p>
+            <p className="mt-1 text-xs text-gray-400">⬇️ <strong>Retire</strong> a unit to remove it and reclaim half its cost (5g / 10g / 15g / 20g). Also reduces upkeep.</p>
           </section>
 
           {/* Combat */}
           <section>
             <h3 className="text-white font-semibold mb-1">⚔️ Combat</h3>
-            <p>Attacker must be stronger than defender + tower/capital defense bonus.</p>
+            <p>Attacker must be stronger than defender + structure defense bonus.</p>
           </section>
 
           {/* Economy */}
@@ -100,18 +102,21 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
           <section>
             <h3 className="text-white font-semibold mb-1">🏗️ Structures</h3>
             <ul className="space-y-1">
-              <li>🏰 <strong>Tower</strong> (15g) — +1 defense to hex and neighbors</li>
-              <li>🏯 <strong>Strong Tower</strong> (35g) — +2 defense</li>
-              <li>🏛️ <strong>Capital</strong> (auto) — no defense, required for buying units</li>
+              <li>🏠 <strong>Farmhouse</strong> (10g) — no defense, x2 income on hex</li>
+              <li>🏰 <strong>Tower</strong> (20g) — +1 defense to hex and neighbors</li>
+              <li>🏯 <strong>Castle</strong> (30g) — +2 defense to hex and neighbors</li>
             </ul>
+            <p className="mt-1 text-xs text-gray-400">Upgrade structures by clicking a higher-tier button for the cost difference.</p>
+            <p className="mt-1 text-xs text-gray-400">Structures built this turn show ⏳ — units cannot jump through them yet.</p>
+            <p className="mt-1 text-xs text-gray-400">You can replace a structure with a unit (confirmation required).</p>
           </section>
 
           {/* Tips */}
           <section>
             <h3 className="text-white font-semibold mb-1">💡 Tips</h3>
             <ul className="list-disc list-inside space-y-1">
-              <li>Protect your capitals — losing one gives the attacker all that province&apos;s gold.</li>
-              <li>Target enemy capitals to steal their gold and cripple their economy.</li>
+              <li>Protect your capitols — losing one gives the attacker all that province&apos;s gold.</li>
+              <li>Target enemy capitols to steal their gold and cripple their economy.</li>
               <li>Split enemy territory to create weak fragments with 0 gold.</li>
               <li>Don&apos;t over-expand — watch your upkeep!</li>
             </ul>

@@ -170,15 +170,16 @@ describe('calculateProvinceUpkeep', () => {
 // ── recalculateAllProvinces ──
 
 describe('recalculateAllProvinces', () => {
-  it('handles province splits with capital-based gold', () => {
+  it('handles province splits with capitol-based gold', () => {
     const hexes: Hex[] = [
       makeHex(0, 0, 'p1', {
         structure: {
           id: 'cap-1',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 0, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       makeHex(1, 0, 'p1'),
@@ -214,15 +215,16 @@ describe('recalculateAllProvinces', () => {
     expect(otherProv.gold).toBe(0);
   });
 
-  it('preserves gold for province with capital', () => {
+  it('preserves gold for province with capitol', () => {
     const hexes: Hex[] = [
       makeHex(0, 0, 'p1', {
         structure: {
           id: 'cap-1',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 0, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       makeHex(1, 0, 'p1'),
@@ -263,10 +265,11 @@ describe('recalculateAllProvinces', () => {
       makeHex(1, 0, 'p1', {
         structure: {
           id: 'cap-1',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 1, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       makeHex(0, 1, 'p1', { hasTree: true, terrain: TerrainType.FOREST }),
@@ -290,23 +293,24 @@ describe('recalculateAllProvinces', () => {
 
     expect(gameState.provinces).toHaveLength(1);
     const prov = gameState.provinces[0];
-    expect(prov.income).toBe(2); // 3 hexes minus 1 tree
+    expect(prov.income).toBe(3); // 1 normal hex + 1 farmhouse hex (x2) - 1 tree
     expect(prov.upkeep).toBe(UNIT_UPKEEP[UnitType.PEASANT]);
     expect(prov.gold).toBe(50);
   });
 
-  it('auto-placed capital clears trees on that hex', () => {
-    // Province splits: the fragment without a capital has all tree hexes
-    // The new capital should clear the tree on the hex it's placed on
+  it('auto-placed capitol clears trees on that hex', () => {
+    // Province splits: the fragment without a capitol has all tree hexes
+    // The new capitol should clear the tree on the hex it's placed on
     const hexes: Hex[] = [
-      // Province A: has capital
+      // Province A: has capitol
       makeHex(0, 0, 'p1', {
         structure: {
           id: 'cap-a',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 0, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       makeHex(1, 0, 'p1'),
@@ -341,32 +345,33 @@ describe('recalculateAllProvinces', () => {
 
     recalculateAllProvinces(gameState);
 
-    // Province B should get a new capital
+    // Province B should get a new capitol
     const provB = gameState.provinces.find((p) =>
       p.hexes.some((h) => h.q === 3 && h.r === 0),
     )!;
-    // Find the hex with the new capital
+    // Find the hex with the new capitol
     const capitalHex = hexes.find(
-      (h) => (h.coord.q === 3 || h.coord.q === 4) && h.structure?.type === StructureType.CAPITAL,
+      (h) => (h.coord.q === 3 || h.coord.q === 4) && h.structure?.isCapitol,
     );
     expect(capitalHex).toBeDefined();
-    // Tree should be cleared on the capital hex
+    // Tree should be cleared on the capitol hex
     expect(capitalHex!.hasTree).toBe(false);
-    // Province B income should reflect the cleared tree (1 income from capital hex)
+    // Province B income should reflect the cleared tree (1 income from capitol hex)
     expect(provB.income).toBeGreaterThanOrEqual(1);
   });
 
-  it('single-hex province with capital does NOT inherit gold from old province', () => {
+  it('single-hex province with capitol does NOT inherit gold from old province', () => {
     // Scenario: province shrinks from 3 hexes to 1 hex.
-    // The surviving hex has the capital. It should NOT keep the old gold.
+    // The surviving hex has the capitol. It should NOT keep the old gold.
     const hexes: Hex[] = [
       makeHex(0, 0, 'p1', {
         structure: {
           id: 'cap1',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 0, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
         unit: makeUnit('p1', 0, 0),
       }),
@@ -399,22 +404,24 @@ describe('recalculateAllProvinces', () => {
     expect(p1Province).toBeDefined();
     // Single-hex province should get 0 gold, NOT 50 from old province
     expect(p1Province!.gold).toBe(0);
-    // Capital should be removed from single-hex province
-    expect(hexes[0].structure).toBeNull();
+    // Capitol flag should be cleared on single-hex province (structure kept)
+    expect(hexes[0].structure).not.toBeNull();
+    expect(hexes[0].structure!.isCapitol).toBe(false);
   });
 
-  it('auto-places capital near water hexes when available', () => {
-    // Province with no capital: hex (3,0) is inland, hex (4,0) borders water at (5,0)
-    // Capital should prefer (4,0) because it has a water neighbor
+  it('auto-places capitol near water hexes when available', () => {
+    // Province with no capitol: hex (3,0) is inland, hex (4,0) borders water at (5,0)
+    // Capitol should prefer (4,0) because it has a water neighbor
     const hexes: Hex[] = [
-      // Province A: has capital, unrelated
+      // Province A: has capitol, unrelated
       makeHex(0, 0, 'p1', {
         structure: {
           id: 'cap-a',
-          type: StructureType.CAPITAL,
+          type: StructureType.FARMHOUSE,
           owner: 'p1',
           hex: { q: 0, r: 0 },
-          strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+          strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+          isCapitol: true,
         },
       }),
       makeHex(1, 0, 'p1'),
@@ -452,12 +459,12 @@ describe('recalculateAllProvinces', () => {
 
     recalculateAllProvinces(gameState);
 
-    // Province B should get a new capital on (5,0) since it's adjacent to water at (6,0)
+    // Province B should get a new capitol on (5,0) since it's adjacent to water at (6,0)
     const capitalHex = hexes.find(
       (h) =>
         [3, 4, 5].includes(h.coord.q) &&
         h.coord.r === 0 &&
-        h.structure?.type === StructureType.CAPITAL,
+        h.structure?.isCapitol,
     );
     expect(capitalHex).toBeDefined();
     expect(capitalHex!.coord.q).toBe(5);

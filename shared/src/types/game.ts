@@ -44,9 +44,9 @@ export interface Unit {
 // ── Structures ──
 
 export enum StructureType {
+  FARMHOUSE = 'FARMHOUSE',
   TOWER = 'TOWER',
-  STRONG_TOWER = 'STRONG_TOWER',
-  CAPITAL = 'CAPITAL',
+  CASTLE = 'CASTLE',
 }
 
 export interface Structure {
@@ -55,6 +55,8 @@ export interface Structure {
   owner: string;
   hex: HexCoord;
   strength: number;
+  isCapitol: boolean;
+  builtThisTurn?: boolean;
 }
 
 // ── Province ──

@@ -69,14 +69,12 @@ function getNextPlayer(gameState: GameState): Player | undefined {
   return activePlayers[nextIdx];
 }
 
-const UNIT_MERGE_MAP: Record<string, UnitType> = {
-  [`${UnitType.PEASANT}+${UnitType.PEASANT}`]: UnitType.SPEARMAN,
-  [`${UnitType.SPEARMAN}+${UnitType.PEASANT}`]: UnitType.BARON,
-  [`${UnitType.PEASANT}+${UnitType.SPEARMAN}`]: UnitType.BARON,
-  [`${UnitType.BARON}+${UnitType.PEASANT}`]: UnitType.KNIGHT,
-  [`${UnitType.PEASANT}+${UnitType.BARON}`]: UnitType.KNIGHT,
-  [`${UnitType.SPEARMAN}+${UnitType.SPEARMAN}`]: UnitType.KNIGHT,
-};
+const UNIT_UPGRADE_ORDER: UnitType[] = [
+  UnitType.PEASANT,
+  UnitType.SPEARMAN,
+  UnitType.BARON,
+  UnitType.KNIGHT,
+];
 
 const TREE_SPREAD_CHANCE = 0.1;
 
@@ -92,10 +90,10 @@ function canPlayerAct(gameState: GameState, playerId: string): boolean {
     .filter((p) => p.owner === playerId)
     .some((p) => {
       if (p.gold < cheapestCost) return false;
-      // Province needs a capital to buy units
+      // Province needs a capitol to buy units
       return p.hexes.some((c) => {
         const h = hexLookup.get(coordKey(c.q, c.r));
-        return h?.structure?.type === StructureType.CAPITAL && h.structure.owner === playerId;
+        return h?.structure?.isCapitol && h.structure.owner === playerId;
       });
     });
 }
@@ -110,7 +108,7 @@ function checkEliminations(gameState: GameState): void {
     }
     // Eliminate players who have hexes but no capital (e.g. only isolated single tiles)
     const hasCapital = playerHexes.some(
-      (h) => h.structure?.type === StructureType.CAPITAL,
+      (h) => h.structure?.isCapitol,
     );
     if (!hasCapital) {
       player.isEliminated = true;
@@ -253,16 +251,25 @@ export function startGame(gameId: string): GameState {
 
           bestHex.structure = {
             id: randomUUID(),
-            type: StructureType.CAPITAL,
+            type: StructureType.FARMHOUSE,
             owner: player.id,
             hex: bestHex.coord,
-            strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+            strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+            isCapitol: true,
           };
         }
       }
     }
     gameState.provinces.push(...playerProvinces);
     player.provinces = playerProvinces.map((p) => p.id);
+  }
+
+  // Recalculate provinces after placing capitols (income depends on structures)
+  recalculateAllProvinces(gameState);
+  for (const player of gameState.players) {
+    player.provinces = gameState.provinces
+      .filter((p) => p.owner === player.id)
+      .map((p) => p.id);
   }
 
   gameStates.set(gameId, gameState);
@@ -315,10 +322,51 @@ export function moveUnit(
     throw new Error('Cannot move to water');
   }
 
-  // Validate adjacency: target must be adjacent to the unit
+  // Validate adjacency: target must be adjacent to the unit,
+  // OR reachable through a connected chain of own structures (recursive jump-through)
   const dist = hexDistance(sourceHex.coord, toHex);
-  if (dist !== 1) {
-    throw new Error('Target hex is not adjacent to unit');
+  let isJumpThrough = false;
+  if (dist === 1) {
+    // Normal adjacency — ok
+  } else {
+    // Check if target is adjacent to a connected chain of own structures starting from source neighbors
+    const sourceNeighbors = getHexNeighbors(sourceHex.coord.q, sourceHex.coord.r);
+
+    // BFS through connected structures starting from source's adjacent structures
+    // Only structures NOT built this turn can be traversed
+    const structureSet = new Set<string>();
+    const queue: HexCoord[] = [];
+    for (const sn of sourceNeighbors) {
+      const h = getHex(gameState.hexes, sn);
+      if (h?.structure && h.owner === playerId && !h.structure.builtThisTurn) {
+        const key = `${sn.q},${sn.r}`;
+        structureSet.add(key);
+        queue.push(sn);
+      }
+    }
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const cn of getHexNeighbors(current.q, current.r)) {
+        const key = `${cn.q},${cn.r}`;
+        if (structureSet.has(key)) continue;
+        const h = getHex(gameState.hexes, cn);
+        if (h?.structure && h.owner === playerId && !h.structure.builtThisTurn) {
+          structureSet.add(key);
+          queue.push(cn);
+        }
+      }
+    }
+
+    // Target must be adjacent to one of the structures in the chain
+    const targetNeighbors = getHexNeighbors(toHex.q, toHex.r);
+    const adjacentToChain = targetNeighbors.some(
+      (tn) => structureSet.has(`${tn.q},${tn.r}`),
+    );
+    if (adjacentToChain) {
+      isJumpThrough = true;
+    } else {
+      throw new Error('Target hex is not adjacent to unit');
+    }
   }
 
   // Validate: target must be own territory or adjacent to own territory
@@ -343,8 +391,9 @@ export function moveUnit(
     if (targetHex.structure) {
       throw new Error('Cannot move onto a hex with a structure');
     }
-    const mergeKey = `${targetHex.unit.type}+${unit.type}`;
-    const mergedType = UNIT_MERGE_MAP[mergeKey];
+    // Merge: combined cost determines the resulting unit type
+    const combinedCost = UNIT_COST[targetHex.unit.type] + UNIT_COST[unit.type];
+    const mergedType = UNIT_UPGRADE_ORDER.find((t) => UNIT_COST[t] === combinedCost);
     if (!mergedType) {
       throw new Error('Cannot merge these units');
     }
@@ -384,7 +433,7 @@ export function moveUnit(
     // Destroy enemy structure on capture
     if (targetHex.structure && targetHex.structure.owner !== playerId) {
       // Capture gold from enemy capital
-      if (targetHex.structure.type === StructureType.CAPITAL) {
+      if (targetHex.structure.isCapitol) {
         const enemyProvince = findProvinceForHex(
           gameState.provinces,
           toHex,
@@ -482,27 +531,27 @@ export function buyUnit(
   const hexLookup = buildHexLookup(gameState.hexes);
   const provinceHasCapital = buyProvince.hexes.some((c) => {
     const h = hexLookup.get(coordKey(c.q, c.r));
-    return h?.structure?.type === StructureType.CAPITAL && h.structure.owner === playerId;
+    return h?.structure?.isCapitol && h.structure.owner === playerId;
   });
   if (!provinceHasCapital) {
     throw new Error('Province has no capital — cannot buy units');
   }
 
-  // Handle merging: if hex has a unit, try to merge
+  // Handle upgrade: if hex has a unit, upgrade directly to target type
   if (targetHex.unit) {
     if (targetHex.unit.hasMoved) {
       throw new Error('Unit has already acted this turn — cannot promote');
     }
-    const mergeKey = `${targetHex.unit.type}+${unitType}`;
-    const mergedType = UNIT_MERGE_MAP[mergeKey];
-    if (!mergedType) {
-      throw new Error('Cannot place unit here: hex already has a unit that cannot be merged');
+    const currentIdx = UNIT_UPGRADE_ORDER.indexOf(targetHex.unit.type);
+    const targetIdx = UNIT_UPGRADE_ORDER.indexOf(unitType);
+    if (targetIdx <= currentIdx) {
+      throw new Error('Can only upgrade to a higher-tier unit');
     }
 
     const province = findProvinceForHex(gameState.provinces, hex, playerId);
     if (!province) throw new Error('Hex does not belong to any province');
 
-    const cost = UNIT_COST[unitType];
+    const cost = UNIT_COST[unitType] - UNIT_COST[targetHex.unit.type];
     if (province.gold < cost) {
       throw new Error(`Insufficient gold: need ${cost}, have ${province.gold}`);
     }
@@ -510,9 +559,9 @@ export function buyUnit(
     province.gold -= cost;
 
     // Upgrade the existing unit
-    targetHex.unit.type = mergedType;
-    targetHex.unit.strength = UNIT_STRENGTH[mergedType];
-    targetHex.unit.upkeep = UNIT_UPKEEP[mergedType];
+    targetHex.unit.type = unitType;
+    targetHex.unit.strength = UNIT_STRENGTH[unitType];
+    targetHex.unit.upkeep = UNIT_UPKEEP[unitType];
     targetHex.unit.hasMoved = true;
 
     // Recalculate province upkeep
@@ -527,8 +576,15 @@ export function buyUnit(
   }
 
   // No existing unit — normal placement
+  // If hex has a structure, destroy it to make room for the unit
   if (targetHex.structure) {
-    throw new Error('Hex already has a structure');
+    if (targetHex.structure.isCapitol) {
+      throw new Error('Cannot replace a capitol structure');
+    }
+    if (targetHex.structure.builtThisTurn) {
+      throw new Error('Cannot replace a structure built this turn');
+    }
+    targetHex.structure = null;
   }
 
   const province = findProvinceForHex(gameState.provinces, hex, playerId);
@@ -575,11 +631,6 @@ export function buildStructure(
     throw new Error('Not your turn');
   }
 
-  // Cannot manually build capitals
-  if (structureType === StructureType.CAPITAL) {
-    throw new Error('Capitals are placed automatically');
-  }
-
   // Snapshot before mutation for step-by-step undo
   const stack = turnSnapshotStacks.get(gameState.id) ?? [];
   stack.push(structuredClone(gameState));
@@ -616,7 +667,80 @@ export function buildStructure(
     owner: playerId,
     hex,
     strength: STRUCTURE_STRENGTH[structureType],
+    isCapitol: false,
+    builtThisTurn: true,
   };
+
+  // Recalculate provinces (income changes with farmhouse bonus)
+  recalculateAllProvinces(gameState);
+  for (const player of gameState.players) {
+    player.provinces = gameState.provinces
+      .filter((p) => p.owner === player.id)
+      .map((p) => p.id);
+  }
+
+  return gameState;
+}
+
+const STRUCTURE_UPGRADE_ORDER: StructureType[] = [
+  StructureType.FARMHOUSE,
+  StructureType.TOWER,
+  StructureType.CASTLE,
+];
+
+export function upgradeStructure(
+  gameState: GameState,
+  playerId: string,
+  targetType: StructureType,
+  hex: HexCoord,
+): GameState {
+  if (gameState.currentTurnPlayerId !== playerId) {
+    throw new Error('Not your turn');
+  }
+
+  // Snapshot before mutation for step-by-step undo
+  const stack = turnSnapshotStacks.get(gameState.id) ?? [];
+  stack.push(structuredClone(gameState));
+  turnSnapshotStacks.set(gameState.id, stack);
+
+  // Clear redo stack
+  redoStacks.set(gameState.id, []);
+
+  const targetHex = getHex(gameState.hexes, hex);
+  if (!targetHex) throw new Error('Hex does not exist');
+  if (targetHex.owner !== playerId) throw new Error('Hex is not owned by you');
+  if (!targetHex.structure) throw new Error('No structure to upgrade');
+  if (targetHex.structure.owner !== playerId) throw new Error('Structure does not belong to you');
+
+  const currentType = targetHex.structure.type;
+  const currentIdx = STRUCTURE_UPGRADE_ORDER.indexOf(currentType);
+  const targetIdx = STRUCTURE_UPGRADE_ORDER.indexOf(targetType);
+  if (targetIdx <= currentIdx) {
+    throw new Error('Can only upgrade to a stronger structure type');
+  }
+
+  const province = findProvinceForHex(gameState.provinces, hex, playerId);
+  if (!province) throw new Error('Hex does not belong to any province');
+
+  // Cost is the difference between current and target structure costs
+  const cost = STRUCTURE_COST[targetType] - STRUCTURE_COST[currentType];
+  if (province.gold < cost) {
+    throw new Error(`Insufficient gold: need ${cost}, have ${province.gold}`);
+  }
+
+  province.gold -= cost;
+
+  // Upgrade in place, preserving isCapitol flag and id
+  targetHex.structure.type = targetType;
+  targetHex.structure.strength = STRUCTURE_STRENGTH[targetType];
+
+  // Recalculate provinces (income changes when farmhouse is upgraded)
+  recalculateAllProvinces(gameState);
+  for (const player of gameState.players) {
+    player.provinces = gameState.provinces
+      .filter((p) => p.owner === player.id)
+      .map((p) => p.id);
+  }
 
   return gameState;
 }
@@ -725,10 +849,13 @@ export function endTurn(gameState: GameState): GameState {
 
   gameState.turnStartedAt = Date.now();
 
-  // Reset hasMoved for the next player's units
+  // Reset hasMoved for the next player's units and builtThisTurn for their structures
   for (const hex of gameState.hexes) {
     if (hex.unit && hex.unit.owner === nextPlayer.id) {
       hex.unit.hasMoved = false;
+    }
+    if (hex.structure && hex.structure.owner === nextPlayer.id && hex.structure.builtThisTurn) {
+      hex.structure.builtThisTurn = false;
     }
   }
 
@@ -814,6 +941,9 @@ export function endTurn(gameState: GameState): GameState {
       for (const hex of gameState.hexes) {
         if (hex.unit && hex.unit.owner === skipPlayer.id) {
           hex.unit.hasMoved = false;
+        }
+        if (hex.structure && hex.structure.owner === skipPlayer.id && hex.structure.builtThisTurn) {
+          hex.structure.builtThisTurn = false;
         }
       }
 
