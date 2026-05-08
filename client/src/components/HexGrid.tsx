@@ -180,7 +180,7 @@ export default function HexGrid({
       if (isMyTurn && currentPlayerId) {
         const shouldPulseUnit = hex.unit && hex.unit.owner === currentPlayerId && !hex.unit.hasMoved;
         const province = provinceByHexRef.current.get(`${hex.coord.q},${hex.coord.r}`);
-        const shouldPulseCapital = !shouldPulseUnit && hex.structure?.type === StructureType.CAPITAL
+        const shouldPulseCapital = !shouldPulseUnit && hex.structure?.isCapitol
           && hex.structure.owner === currentPlayerId
           && province && province.gold >= UNIT_COST[UnitType.PEASANT];
 
@@ -220,19 +220,25 @@ export default function HexGrid({
 
       // Structure
       if (hex.structure) {
-        const emoji = hex.structure.type === StructureType.STRONG_TOWER
+        const emoji = hex.structure.type === StructureType.CASTLE
           ? '🏯'
-          : hex.structure.type === StructureType.CAPITAL
-            ? '🏛️'
-            : '🏰';
+          : hex.structure.type === StructureType.TOWER
+            ? '🏰'
+            : '🏠';
         ctx.fillStyle = '#000';
         ctx.font = `${Math.round(size * 0.6)}px serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(emoji, cx, cy - size * 0.1);
 
-        // Gold badge on current player's capitals
-        if (hex.structure.type === StructureType.CAPITAL && hex.structure.owner === currentPlayerId) {
+        // Star icon for capitols
+        if (hex.structure.isCapitol) {
+          ctx.font = `${Math.round(size * 0.3)}px serif`;
+          ctx.fillText('⭐', cx + size * 0.3, cy - size * 0.35);
+        }
+
+        // Gold badge on current player's capitols
+        if (hex.structure.isCapitol && hex.structure.owner === currentPlayerId) {
           const prov = provinceByHexRef.current.get(`${hex.coord.q},${hex.coord.r}`);
           if (prov) {
             const goldText = `${prov.gold}g`;

@@ -257,10 +257,10 @@ export default function GameBoard({
                 />
                 <ActionButton
                   emoji="🏯"
-                  cost={STRUCTURE_COST[StructureTypeEnum.STRONG_TOWER]}
-                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.STRONG_TOWER]}
-                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.STRONG_TOWER, selectedHex)}
-                  title="Build Strong Tower"
+                  cost={STRUCTURE_COST[StructureTypeEnum.CASTLE]}
+                  disabled={!isMyTurn || !hasHex || gold < STRUCTURE_COST[StructureTypeEnum.CASTLE]}
+                  onClick={() => selectedHex && onBuildStructure!(StructureTypeEnum.CASTLE, selectedHex)}
+                  title="Build Castle"
                 />
 
                 <div className="w-px h-8 bg-slate-600 mx-1" />
@@ -374,6 +374,6 @@ function hasCapitalInProvince(province: Province, gameState: GameState): boolean
     const hex = gameState.hexes.find(
       (h) => h.coord.q === coord.q && h.coord.r === coord.r,
     );
-    return hex?.structure?.type === StructureTypeEnum.CAPITAL;
+    return hex?.structure?.isCapitol;
   });
 }

@@ -54,19 +54,40 @@ function computeValidMoves(hex: HexCoord, hexes: Hex[], currentPlayerId: string)
   const sourceHex = hexMap.get(`${hex.q},${hex.r}`);
   const unitStrength = sourceHex?.unit?.strength ?? 0;
 
+  const results: HexCoord[] = [];
   const neighbors = getHexNeighbors(hex.q, hex.r);
-  return neighbors.filter((n) => {
+
+  for (const n of neighbors) {
     const target = hexMap.get(`${n.q},${n.r}`);
-    if (!target || target.terrain === TerrainType.WATER) return false;
-    // Can't move onto own structure (capital, tower)
-    if (target.owner === currentPlayerId && target.structure) return false;
+    if (!target || target.terrain === TerrainType.WATER) continue;
+
+    // Own structure — can't land on it, but can jump through
+    if (target.owner === currentPlayerId && target.structure) {
+      // Jump through: find tiles adjacent to the structure (but not the source)
+      const structNeighbors = getHexNeighbors(n.q, n.r);
+      for (const sn of structNeighbors) {
+        if (sn.q === hex.q && sn.r === hex.r) continue;
+        const jumpTarget = hexMap.get(`${sn.q},${sn.r}`);
+        if (!jumpTarget || jumpTarget.terrain === TerrainType.WATER) continue;
+        if (jumpTarget.owner === currentPlayerId && jumpTarget.structure) continue;
+        if (jumpTarget.owner !== null && jumpTarget.owner !== currentPlayerId) {
+          const defense = getHexDefense(jumpTarget, hexMap);
+          if (unitStrength <= defense) continue;
+        }
+        results.push(sn);
+      }
+      continue;
+    }
+
     // Can't attack/capture if unit isn't strong enough
     if (target.owner !== null && target.owner !== currentPlayerId) {
       const defense = getHexDefense(target, hexMap);
-      if (unitStrength <= defense) return false;
+      if (unitStrength <= defense) continue;
     }
-    return true;
-  });
+    results.push(n);
+  }
+
+  return results;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({

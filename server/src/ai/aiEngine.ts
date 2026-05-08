@@ -92,8 +92,27 @@ function getValidMoves(gameState: GameState, playerId: string): UnitMove[] {
 
       // Check if we can actually move there
       if (targetHex.owner === playerId) {
-        // Can't move onto own structure (capital, tower)
-        if (targetHex.structure) continue;
+        // Own structure — can't land on it, but can jump through to adjacent tiles
+        if (targetHex.structure) {
+          // Jump through: find tiles adjacent to both the structure and not the source
+          const structNeighbors = getHexNeighbors(nc.q, nc.r);
+          for (const sn of structNeighbors) {
+            if (sn.q === sourceHex.coord.q && sn.r === sourceHex.coord.r) continue;
+            const jumpTarget = lookup.get(coordKey(sn.q, sn.r));
+            if (!jumpTarget || jumpTarget.terrain === TerrainType.WATER) continue;
+            if (jumpTarget.owner === playerId && jumpTarget.structure) continue;
+            if (jumpTarget.owner === playerId && !jumpTarget.unit) {
+              moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
+            } else if (jumpTarget.owner === null) {
+              moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
+            } else if (jumpTarget.owner !== playerId) {
+              if (canCapture(unit, jumpTarget, gameState.hexes)) {
+                moves.push({ unitId: unit.id, from: sourceHex.coord, to: sn });
+              }
+            }
+          }
+          continue;
+        }
         // Can move to own territory if no unit or mergeable
         if (!targetHex.unit) {
           moves.push({ unitId: unit.id, from: sourceHex.coord, to: nc });
@@ -229,7 +248,7 @@ function getEmptyOwnedHexes(gameState: GameState, playerId: string): Hex[] {
     (h) =>
       h.owner === playerId &&
       !h.unit &&
-      (!h.structure || h.structure.type === StructureType.CAPITAL) &&
+      (!h.structure || h.structure.isCapitol) &&
       h.terrain !== TerrainType.WATER,
   );
 }
@@ -237,7 +256,7 @@ function getEmptyOwnedHexes(gameState: GameState, playerId: string): Hex[] {
 function findCapitalHexes(gameState: GameState, playerId: string): Hex[] {
   return gameState.hexes.filter(
     (h) =>
-      h.structure?.type === StructureType.CAPITAL &&
+      h.structure?.isCapitol &&
       h.structure.owner === playerId,
   );
 }
@@ -245,7 +264,7 @@ function findCapitalHexes(gameState: GameState, playerId: string): Hex[] {
 function findEnemyCapitalHexes(gameState: GameState, playerId: string): Hex[] {
   return gameState.hexes.filter(
     (h) =>
-      h.structure?.type === StructureType.CAPITAL &&
+      h.structure?.isCapitol &&
       h.structure.owner !== playerId &&
       h.owner !== playerId &&
       h.owner !== null,
@@ -425,7 +444,7 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
       else if (targetHex.owner !== playerId) {
         score = 8; // Enemy capture
         // Bonus for attacking enemy capitals
-        if (targetHex.structure?.type === StructureType.CAPITAL) {
+        if (targetHex.structure?.isCapitol) {
           score += 10;
           // Extra bonus proportional to province gold (every 5 gold = +1)
           const province = gameState.provinces.find((p) =>
@@ -609,7 +628,7 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
         // Bonus for weak enemies
         if (defense === 0) score += 5;
         // HIGH bonus for capturing enemy capitals
-        if (targetHex.structure?.type === StructureType.CAPITAL) {
+        if (targetHex.structure?.isCapitol) {
           score += 25;
           // Extra bonus proportional to province gold (every 3 gold = +1)
           const province = gameState.provinces.find((p) =>
@@ -683,8 +702,8 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
     if (!province) continue;
 
     const structureType =
-      province.gold >= STRUCTURE_COST[StructureType.STRONG_TOWER] && candidate.score >= 8
-        ? StructureType.STRONG_TOWER
+      province.gold >= STRUCTURE_COST[StructureType.CASTLE] && candidate.score >= 8
+        ? StructureType.CASTLE
         : StructureType.TOWER;
 
     if (province.gold < STRUCTURE_COST[structureType]) continue;

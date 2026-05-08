@@ -12,6 +12,7 @@ export enum ClientMessageType {
   MOVE_UNIT = 'MOVE_UNIT',
   BUY_UNIT = 'BUY_UNIT',
   BUILD_STRUCTURE = 'BUILD_STRUCTURE',
+  UPGRADE_STRUCTURE = 'UPGRADE_STRUCTURE',
   END_TURN = 'END_TURN',
   RETIRE_UNIT = 'RETIRE_UNIT',
   UNDO_TURN = 'UNDO_TURN',
@@ -86,6 +87,12 @@ export interface BuildStructureMessage {
   hex: HexCoord;
 }
 
+export interface UpgradeStructureMessage {
+  type: ClientMessageType.UPGRADE_STRUCTURE;
+  structureType: StructureType;
+  hex: HexCoord;
+}
+
 export interface EndTurnMessage {
   type: ClientMessageType.END_TURN;
 }
@@ -128,6 +135,7 @@ export type ClientMessage =
   | MoveUnitMessage
   | BuyUnitMessage
   | BuildStructureMessage
+  | UpgradeStructureMessage
   | EndTurnMessage
   | RetireUnitMessage
   | UndoTurnMessage

@@ -92,10 +92,10 @@ function canPlayerAct(gameState: GameState, playerId: string): boolean {
     .filter((p) => p.owner === playerId)
     .some((p) => {
       if (p.gold < cheapestCost) return false;
-      // Province needs a capital to buy units
+      // Province needs a capitol to buy units
       return p.hexes.some((c) => {
         const h = hexLookup.get(coordKey(c.q, c.r));
-        return h?.structure?.type === StructureType.CAPITAL && h.structure.owner === playerId;
+        return h?.structure?.isCapitol && h.structure.owner === playerId;
       });
     });
 }
@@ -110,7 +110,7 @@ function checkEliminations(gameState: GameState): void {
     }
     // Eliminate players who have hexes but no capital (e.g. only isolated single tiles)
     const hasCapital = playerHexes.some(
-      (h) => h.structure?.type === StructureType.CAPITAL,
+      (h) => h.structure?.isCapitol,
     );
     if (!hasCapital) {
       player.isEliminated = true;
@@ -253,10 +253,11 @@ export function startGame(gameId: string): GameState {
 
           bestHex.structure = {
             id: randomUUID(),
-            type: StructureType.CAPITAL,
+            type: StructureType.FARMHOUSE,
             owner: player.id,
             hex: bestHex.coord,
-            strength: STRUCTURE_STRENGTH[StructureType.CAPITAL],
+            strength: STRUCTURE_STRENGTH[StructureType.FARMHOUSE],
+            isCapitol: true,
           };
         }
       }
@@ -315,9 +316,28 @@ export function moveUnit(
     throw new Error('Cannot move to water');
   }
 
-  // Validate adjacency: target must be adjacent to the unit
+  // Validate adjacency: target must be adjacent to the unit,
+  // OR distance-2 with an own structure in between (jump through)
   const dist = hexDistance(sourceHex.coord, toHex);
-  if (dist !== 1) {
+  let isJumpThrough = false;
+  if (dist === 1) {
+    // Normal adjacency — ok
+  } else if (dist === 2) {
+    // Check if there's a friendly structure on a hex between source and target
+    const sourceNeighbors = getHexNeighbors(sourceHex.coord.q, sourceHex.coord.r);
+    const targetNeighbors = getHexNeighbors(toHex.q, toHex.r);
+    const targetNeighborSet = new Set(targetNeighbors.map(n => `${n.q},${n.r}`));
+    const bridgeHex = sourceNeighbors.find((sn) => {
+      if (!targetNeighborSet.has(`${sn.q},${sn.r}`)) return false;
+      const h = getHex(gameState.hexes, sn);
+      return h?.structure && h.owner === playerId;
+    });
+    if (bridgeHex) {
+      isJumpThrough = true;
+    } else {
+      throw new Error('Target hex is not adjacent to unit');
+    }
+  } else {
     throw new Error('Target hex is not adjacent to unit');
   }
 
@@ -384,7 +404,7 @@ export function moveUnit(
     // Destroy enemy structure on capture
     if (targetHex.structure && targetHex.structure.owner !== playerId) {
       // Capture gold from enemy capital
-      if (targetHex.structure.type === StructureType.CAPITAL) {
+      if (targetHex.structure.isCapitol) {
         const enemyProvince = findProvinceForHex(
           gameState.provinces,
           toHex,
@@ -482,7 +502,7 @@ export function buyUnit(
   const hexLookup = buildHexLookup(gameState.hexes);
   const provinceHasCapital = buyProvince.hexes.some((c) => {
     const h = hexLookup.get(coordKey(c.q, c.r));
-    return h?.structure?.type === StructureType.CAPITAL && h.structure.owner === playerId;
+    return h?.structure?.isCapitol && h.structure.owner === playerId;
   });
   if (!provinceHasCapital) {
     throw new Error('Province has no capital — cannot buy units');
@@ -575,9 +595,9 @@ export function buildStructure(
     throw new Error('Not your turn');
   }
 
-  // Cannot manually build capitals
-  if (structureType === StructureType.CAPITAL) {
-    throw new Error('Capitals are placed automatically');
+  // Cannot build farmhouses directly (only through capitol system)
+  if (structureType === StructureType.FARMHOUSE) {
+    throw new Error('Farmhouses cannot be built directly');
   }
 
   // Snapshot before mutation for step-by-step undo
@@ -616,7 +636,63 @@ export function buildStructure(
     owner: playerId,
     hex,
     strength: STRUCTURE_STRENGTH[structureType],
+    isCapitol: false,
   };
+
+  return gameState;
+}
+
+const STRUCTURE_UPGRADE_ORDER: StructureType[] = [
+  StructureType.FARMHOUSE,
+  StructureType.TOWER,
+  StructureType.CASTLE,
+];
+
+export function upgradeStructure(
+  gameState: GameState,
+  playerId: string,
+  targetType: StructureType,
+  hex: HexCoord,
+): GameState {
+  if (gameState.currentTurnPlayerId !== playerId) {
+    throw new Error('Not your turn');
+  }
+
+  // Snapshot before mutation for step-by-step undo
+  const stack = turnSnapshotStacks.get(gameState.id) ?? [];
+  stack.push(structuredClone(gameState));
+  turnSnapshotStacks.set(gameState.id, stack);
+
+  // Clear redo stack
+  redoStacks.set(gameState.id, []);
+
+  const targetHex = getHex(gameState.hexes, hex);
+  if (!targetHex) throw new Error('Hex does not exist');
+  if (targetHex.owner !== playerId) throw new Error('Hex is not owned by you');
+  if (!targetHex.structure) throw new Error('No structure to upgrade');
+  if (targetHex.structure.owner !== playerId) throw new Error('Structure does not belong to you');
+
+  const currentType = targetHex.structure.type;
+  const currentIdx = STRUCTURE_UPGRADE_ORDER.indexOf(currentType);
+  const targetIdx = STRUCTURE_UPGRADE_ORDER.indexOf(targetType);
+  if (targetIdx <= currentIdx) {
+    throw new Error('Can only upgrade to a stronger structure type');
+  }
+
+  const province = findProvinceForHex(gameState.provinces, hex, playerId);
+  if (!province) throw new Error('Hex does not belong to any province');
+
+  // Cost is the difference between current and target structure costs
+  const cost = STRUCTURE_COST[targetType] - STRUCTURE_COST[currentType];
+  if (province.gold < cost) {
+    throw new Error(`Insufficient gold: need ${cost}, have ${province.gold}`);
+  }
+
+  province.gold -= cost;
+
+  // Upgrade in place, preserving isCapitol flag and id
+  targetHex.structure.type = targetType;
+  targetHex.structure.strength = STRUCTURE_STRENGTH[targetType];
 
   return gameState;
 }

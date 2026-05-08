@@ -39,7 +39,7 @@ export default function ActionBar({
 
   const buildButtons: { label: string; cost: number; structureType: StructureType }[] = [
     { label: '🏰 Tower', cost: STRUCTURE_COST[StructureType.TOWER], structureType: StructureType.TOWER },
-    { label: '🏯 Fort', cost: STRUCTURE_COST[StructureType.STRONG_TOWER], structureType: StructureType.STRONG_TOWER },
+    { label: '🏯 Castle', cost: STRUCTURE_COST[StructureType.CASTLE], structureType: StructureType.CASTLE },
   ];
 
   const handleSurrender = () => {

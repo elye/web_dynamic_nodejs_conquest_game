@@ -26,15 +26,15 @@ export const UNIT_COST: Record<UnitType, number> = {
 // ── Structure Stats ──
 
 export const STRUCTURE_COST: Record<StructureType, number> = {
-  [StructureType.TOWER]: 15,
-  [StructureType.STRONG_TOWER]: 35,
-  [StructureType.CAPITAL]: 0,
+  [StructureType.FARMHOUSE]: 10,
+  [StructureType.TOWER]: 20,
+  [StructureType.CASTLE]: 30,
 };
 
 export const STRUCTURE_STRENGTH: Record<StructureType, number> = {
+  [StructureType.FARMHOUSE]: 0,
   [StructureType.TOWER]: 1,
-  [StructureType.STRONG_TOWER]: 2,
-  [StructureType.CAPITAL]: 0,
+  [StructureType.CASTLE]: 2,
 };
 
 // ── Map ──
