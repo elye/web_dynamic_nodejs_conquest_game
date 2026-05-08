@@ -90,18 +90,18 @@ export default function GameBoard({
       {/* Side panel — slide-in drawer on mobile, static on desktop */}
       {/* Mobile backdrop */}
       {showSidebar && (
-        <div className="md:hidden fixed inset-0 bg-black/40 z-40" onClick={() => setShowSidebar(false)} />
+        <div className="lg:hidden fixed inset-0 bg-black/40 z-40" onClick={() => setShowSidebar(false)} />
       )}
       <div className={`
         fixed top-0 left-0 h-full z-50 transition-transform duration-200 ease-in-out
         ${showSidebar ? 'translate-x-0' : '-translate-x-full'}
-        md:relative md:translate-x-0 md:z-auto md:transition-none
+        lg:relative lg:translate-x-0 lg:z-auto lg:transition-none
       `}>
-        <div className="w-56 md:w-64 h-full bg-gray-800 border-r border-gray-700 flex flex-col overflow-y-auto">
-          {/* Close button on mobile */}
+        <div className="w-56 lg:w-64 h-full bg-gray-800 border-r border-gray-700 flex flex-col overflow-y-auto">
+          {/* Close button on mobile/tablet */}
           <button
             onClick={() => setShowSidebar(false)}
-            className="md:hidden absolute top-2 right-2 text-gray-400 hover:text-white text-xl z-10"
+            className="lg:hidden absolute top-2 right-2 text-gray-400 hover:text-white text-xl z-10"
           >
             ✕
           </button>
@@ -196,13 +196,13 @@ export default function GameBoard({
       </div>
 
       {/* Map area */}
-      <div className="flex-1 flex flex-col min-h-0 relative md:ml-0">
+      <div className="flex-1 flex flex-col min-h-0 relative lg:ml-0">
         {/* Turn & connection header */}
         <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center px-3 md:px-4 justify-between gap-2">
           {/* Sidebar toggle for mobile */}
           <button
             onClick={() => setShowSidebar(s => !s)}
-            className="md:hidden text-gray-300 hover:text-white text-lg shrink-0"
+            className="lg:hidden text-gray-300 hover:text-white text-lg shrink-0"
             title="Show players & info"
           >
             ☰
@@ -218,7 +218,7 @@ export default function GameBoard({
                 <span
                   className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}
                 />
-                <span className="hidden md:inline">{isConnected ? 'Connected' : 'Disconnected'}</span>
+                <span className="hidden lg:inline">{isConnected ? 'Connected' : 'Disconnected'}</span>
               </span>
             )}
             <button
