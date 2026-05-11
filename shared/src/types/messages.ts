@@ -19,6 +19,7 @@ export enum ClientMessageType {
   REDO_ACTION = 'REDO_ACTION',
   CHAT_MESSAGE = 'CHAT_MESSAGE',
   SURRENDER = 'SURRENDER',
+  SET_SKIP_AI = 'SET_SKIP_AI',
   REQUEST_STATE = 'REQUEST_STATE',
   READY = 'READY',
 }
@@ -106,6 +107,11 @@ export interface SurrenderMessage {
   type: ClientMessageType.SURRENDER;
 }
 
+export interface SetSkipAiMessage {
+  type: ClientMessageType.SET_SKIP_AI;
+  skip: boolean;
+}
+
 export interface RetireUnitMessage {
   type: ClientMessageType.RETIRE_UNIT;
   unitId: string;
@@ -142,6 +148,7 @@ export type ClientMessage =
   | RedoActionMessage
   | ChatMessage
   | SurrenderMessage
+  | SetSkipAiMessage
   | RequestStateMessage
   | ReadyMessage;
 
