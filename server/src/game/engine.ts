@@ -79,22 +79,36 @@ const UNIT_UPGRADE_ORDER: UnitType[] = [
 const TREE_SPREAD_CHANCE = 0.1;
 
 function canPlayerAct(gameState: GameState, playerId: string): boolean {
-  const hasUnits = gameState.hexes.some(
-    (h) => h.unit && h.unit.owner === playerId,
+  // Check for unmoved units (can still act)
+  const hasUnmovedUnits = gameState.hexes.some(
+    (h) => h.unit && h.unit.owner === playerId && !h.unit.hasMoved,
   );
-  if (hasUnits) return true;
+  if (hasUnmovedUnits) return true;
 
-  const cheapestCost = UNIT_COST[UnitType.PEASANT];
+  const cheapestUnitCost = UNIT_COST[UnitType.PEASANT];
+  const cheapestStructureCost = STRUCTURE_COST[StructureType.FARMHOUSE];
   const hexLookup = buildHexLookup(gameState.hexes);
+
   return gameState.provinces
     .filter((p) => p.owner === playerId)
     .some((p) => {
-      if (p.gold < cheapestCost) return false;
-      // Province needs a capitol to buy units
-      return p.hexes.some((c) => {
-        const h = hexLookup.get(coordKey(c.q, c.r));
-        return h?.structure?.isCapitol && h.structure.owner === playerId;
-      });
+      // Can buy a unit if province has a capitol and enough gold
+      if (p.gold >= cheapestUnitCost) {
+        const hasCap = p.hexes.some((c) => {
+          const h = hexLookup.get(coordKey(c.q, c.r));
+          return h?.structure?.isCapitol && h.structure.owner === playerId;
+        });
+        if (hasCap) return true;
+      }
+      // Can build a structure if province has enough gold and an empty hex
+      if (p.gold >= cheapestStructureCost) {
+        const hasEmpty = p.hexes.some((c) => {
+          const h = hexLookup.get(coordKey(c.q, c.r));
+          return h && !h.unit && !h.structure;
+        });
+        if (hasEmpty) return true;
+      }
+      return false;
     });
 }
 
@@ -893,7 +907,7 @@ export function endTurn(gameState: GameState): GameState {
 
   // Process income and upkeep for the NEW current player's provinces
   const newCurrentPlayerId = gameState.currentTurnPlayerId;
-  const playerProvinces = gameState.provinces.filter(
+  let playerProvinces = gameState.provinces.filter(
     (p) => p.owner === newCurrentPlayerId,
   );
 
@@ -904,9 +918,10 @@ export function endTurn(gameState: GameState): GameState {
     }
   }
 
-  // Kill units on single-hex provinces of the outgoing player.
+  // Kill units and destroy structures on single-hex provinces of the outgoing player.
   // Single-hex provinces have no capitol (gold=0), income≤1, and unit upkeep≥2,
   // so they can never sustain a unit — kill immediately rather than waiting a full round.
+  // Structures on isolated hexes also wither since the province has no capitol.
   const outgoingProvinces = gameState.provinces.filter(
     (p) => p.owner === currentPlayerId && p.hexes.length < 2,
   );
@@ -915,12 +930,34 @@ export function endTurn(gameState: GameState): GameState {
     for (const province of outgoingProvinces) {
       for (const coord of province.hexes) {
         const hex = lookup.get(coordKey(coord.q, coord.r));
-        if (hex?.unit && hex.unit.owner === currentPlayerId) {
+        if (!hex) continue;
+        if (hex.unit && hex.unit.owner === currentPlayerId) {
           hex.unit = null;
           hex.deathMarker = 'starvation';
         }
+        if (hex.structure && hex.structure.owner === currentPlayerId) {
+          hex.structure = null;
+        }
       }
     }
+  }
+
+  // Recalculate after isolated province cleanup (structures/units were removed)
+  if (outgoingProvinces.length > 0) {
+    recalculateAllProvinces(gameState);
+    for (const player of gameState.players) {
+      player.provinces = gameState.provinces
+        .filter((p) => p.owner === player.id)
+        .map((p) => p.id);
+    }
+    checkEliminations(gameState);
+    checkWinCondition(gameState);
+    if (gameState.status === GameStatus.FINISHED) return gameState;
+
+    // Re-fetch player provinces after recalculation
+    playerProvinces = gameState.provinces.filter(
+      (p) => p.owner === newCurrentPlayerId,
+    );
   }
 
   for (const province of playerProvinces) {

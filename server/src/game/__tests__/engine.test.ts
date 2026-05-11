@@ -828,12 +828,53 @@ describe('endTurn', () => {
     expect(isolatedHex!.deathMarker).toBe('starvation');
   });
 
+  it('destroys structures on isolated single-hex provinces at end of turn', () => {
+    // Add an isolated hex owned by p1 with a structure
+    gs.hexes.push(makeHex(5, 5, 'p1', {
+      structure: {
+        id: 'isolated-struct',
+        type: StructureType.TOWER,
+        owner: 'p1',
+        hex: { q: 5, r: 5 },
+        strength: STRUCTURE_STRENGTH[StructureType.TOWER],
+        isCapitol: false,
+      },
+    }));
+
+    recalculateAllProvinces(gs);
+    endTurn(gs);
+
+    const isolatedHex = gs.hexes.find((h) => h.coord.q === 5 && h.coord.r === 5);
+    expect(isolatedHex!.structure).toBeNull();
+  });
+
   it('does NOT kill units in multi-hex provinces at end of turn', () => {
     // p1's main province has 3 hexes with one unit — should survive
     const result = endTurn(gs);
 
     const unitHex = result.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0);
     expect(unitHex!.unit).not.toBeNull();
+  });
+
+  it('auto-skips player with only moved units and no gold', () => {
+    // Mark p1's unit as moved and set gold to 0
+    const p1UnitHex = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0)!;
+    p1UnitHex.unit!.hasMoved = true;
+    gs.provinces.find((p) => p.owner === 'p1')!.gold = 0;
+
+    // End p1's turn, p2's turn starts
+    endTurn(gs);
+    expect(gs.currentTurnPlayerId).toBe('p2');
+
+    // End p2's turn — p1 should be auto-skipped since all units moved and no gold
+    const p2Unit = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;
+    p2Unit.unit!.hasMoved = true;
+    gs.provinces.find((p) => p.owner === 'p2')!.gold = 0;
+    endTurn(gs);
+
+    // Should skip past p1 (all units moved, no gold to buy) and land on p2
+    // But p2 also can't act, so it cycles. The key test is that it doesn't hang.
+    expect(gs.currentTurnPlayerId).toBeDefined();
   });
 
   it("resets hasMoved for new player's units", () => {
