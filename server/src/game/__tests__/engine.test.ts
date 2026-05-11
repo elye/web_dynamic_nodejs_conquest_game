@@ -450,6 +450,32 @@ describe('moveUnit', () => {
     expect(mergedHex!.unit!.type).toBe(UnitType.BARON);
   });
 
+  it("can't merge onto a unit that has already moved", () => {
+    // Place a peasant that has already moved on (1,0), try to merge another into it
+    const midHex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    midHex.structure = null;
+    midHex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'moved-target');
+    midHex.unit.hasMoved = true;
+
+    expect(() => moveUnit(gs, 'p1', 'u1', { q: 1, r: 0 })).toThrow(
+      'already acted this turn',
+    );
+  });
+
+  it("can't merge onto a unit that was just promoted via buy", () => {
+    // Place a peasant, promote it via buyUnit, then try to merge another peasant into it
+    const midHex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    midHex.unit = makeUnit('p1', -1, 0, UnitType.PEASANT, 'buy-promoted');
+
+    buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: -1, r: 0 });
+    expect(midHex.unit!.hasMoved).toBe(true);
+
+    // Place a fresh peasant on (0,0) (source unit is u1 already there)
+    expect(() => moveUnit(gs, 'p1', 'u1', { q: -1, r: 0 })).toThrow(
+      'already acted this turn',
+    );
+  });
+
   it('clears death markers on move', () => {
     const targetHex = gs.hexes.find((h) => h.coord.q === 0 && h.coord.r === 1)!;
     targetHex.deathMarker = 'starvation';

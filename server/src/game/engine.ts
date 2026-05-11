@@ -405,6 +405,9 @@ export function moveUnit(
     if (targetHex.structure) {
       throw new Error('Cannot move onto a hex with a structure');
     }
+    if (targetHex.unit.hasMoved) {
+      throw new Error('Target unit has already acted this turn — cannot merge');
+    }
     // Merge: combined cost determines the resulting unit type
     const combinedCost = UNIT_COST[targetHex.unit.type] + UNIT_COST[unit.type];
     const mergedType = UNIT_UPGRADE_ORDER.find((t) => UNIT_COST[t] === combinedCost);
