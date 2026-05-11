@@ -563,6 +563,7 @@ export function buyUnit(
     targetHex.unit.strength = UNIT_STRENGTH[unitType];
     targetHex.unit.upkeep = UNIT_UPKEEP[unitType];
     targetHex.unit.hasMoved = true;
+    delete targetHex.deathMarker;
 
     // Recalculate province upkeep
     recalculateAllProvinces(gameState);
@@ -599,6 +600,7 @@ export function buyUnit(
 
   // Remove tree if present (unit chops it down)
   targetHex.hasTree = false;
+  delete targetHex.deathMarker;
 
   targetHex.unit = {
     id: randomUUID(),
@@ -660,6 +662,8 @@ export function buildStructure(
   }
 
   province.gold -= cost;
+
+  delete targetHex.deathMarker;
 
   targetHex.structure = {
     id: randomUUID(),

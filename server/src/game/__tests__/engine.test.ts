@@ -639,6 +639,25 @@ describe('buyUnit', () => {
       'already acted this turn',
     );
   });
+
+  it('clears death marker when placing new unit', () => {
+    const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    hex.deathMarker = 'starvation';
+
+    const result = buyUnit(gs, 'p1', UnitType.PEASANT, { q: -1, r: 0 });
+    const placedHex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0);
+    expect(placedHex!.deathMarker).toBeUndefined();
+  });
+
+  it('clears death marker when upgrading existing unit', () => {
+    const hex = gs.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0)!;
+    hex.unit = makeUnit('p1', 1, 0, UnitType.PEASANT, 'upgrade-target');
+    hex.deathMarker = 'starvation';
+
+    const result = buyUnit(gs, 'p1', UnitType.SPEARMAN, { q: 1, r: 0 });
+    const upgradedHex = result.hexes.find((h) => h.coord.q === 1 && h.coord.r === 0);
+    expect(upgradedHex!.deathMarker).toBeUndefined();
+  });
 });
 
 // ── buildStructure ──
@@ -704,6 +723,15 @@ describe('buildStructure', () => {
     expect(() =>
       buildStructure(gs, 'p1', StructureType.TOWER, { q: 2, r: 0 }),
     ).toThrow('not owned by you');
+  });
+
+  it('clears death marker when building structure', () => {
+    const hex = gs.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0)!;
+    hex.deathMarker = 'starvation';
+
+    const result = buildStructure(gs, 'p1', StructureType.TOWER, { q: -1, r: 0 });
+    const builtHex = result.hexes.find((h) => h.coord.q === -1 && h.coord.r === 0);
+    expect(builtHex!.deathMarker).toBeUndefined();
   });
 });
 
