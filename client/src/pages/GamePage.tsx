@@ -117,6 +117,10 @@ export default function GamePage() {
       case ServerMessageType.ERROR:
         if (msg.code === 'GAME_NOT_FOUND') {
           setGameNotFound(true);
+        } else if (msg.code === 'GAME_NOT_IN_PROGRESS') {
+          if (!gameOverMsg) {
+            setGameOverMsg('The game has ended.');
+          }
         } else {
           showNotification(`Error: ${msg.message}`);
         }

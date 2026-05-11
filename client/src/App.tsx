@@ -8,6 +8,7 @@ import { useAuthStore } from './store/authStore';
 import { useLobbyStore } from './store/lobbyStore';
 import { getActiveGame, getGame } from './utils/api';
 import { parseHash, navigateTo } from './utils/navigation';
+import { useKeepAlive } from './hooks/usePing';
 
 // ── Error Boundary ──
 
@@ -111,6 +112,9 @@ function App() {
   const { currentRoom, gameState, setGameState, setCurrentRoom } = useLobbyStore();
   const route = useHashRoute();
   const [isRejoining, setIsRejoining] = useState(false);
+
+  // Keep server alive (Render free-tier spin-down prevention)
+  useKeepAlive();
 
   useEffect(() => {
     restore();

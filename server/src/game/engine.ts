@@ -918,24 +918,24 @@ export function endTurn(gameState: GameState): GameState {
     }
   }
 
-  // Kill units and destroy structures on single-hex provinces of the outgoing player.
+  // Kill units and destroy structures on single-hex provinces of ALL players.
   // Single-hex provinces have no capitol (gold=0), income≤1, and unit upkeep≥2,
   // so they can never sustain a unit — kill immediately rather than waiting a full round.
   // Structures on isolated hexes also wither since the province has no capitol.
-  const outgoingProvinces = gameState.provinces.filter(
-    (p) => p.owner === currentPlayerId && p.hexes.length < 2,
+  const isolatedProvinces = gameState.provinces.filter(
+    (p) => p.hexes.length < 2,
   );
   {
     const lookup = buildHexLookup(gameState.hexes);
-    for (const province of outgoingProvinces) {
+    for (const province of isolatedProvinces) {
       for (const coord of province.hexes) {
         const hex = lookup.get(coordKey(coord.q, coord.r));
         if (!hex) continue;
-        if (hex.unit && hex.unit.owner === currentPlayerId) {
+        if (hex.unit) {
           hex.unit = null;
           hex.deathMarker = 'starvation';
         }
-        if (hex.structure && hex.structure.owner === currentPlayerId) {
+        if (hex.structure) {
           hex.structure = null;
         }
       }
@@ -943,7 +943,7 @@ export function endTurn(gameState: GameState): GameState {
   }
 
   // Recalculate after isolated province cleanup (structures/units were removed)
-  if (outgoingProvinces.length > 0) {
+  if (isolatedProvinces.length > 0) {
     recalculateAllProvinces(gameState);
     for (const player of gameState.players) {
       player.provinces = gameState.provinces

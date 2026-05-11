@@ -222,9 +222,10 @@ function handleConnection(ws: WebSocket, playerId: string, gameId: string): void
       handleMessage(playerId, gameId, message);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Invalid message';
+      const errorCode = (err as any)?.code ?? 'INVALID_MESSAGE';
       sendToPlayer(playerId, {
         type: ServerMessageType.ERROR,
-        code: 'INVALID_MESSAGE',
+        code: errorCode,
         message: errorMsg,
       });
     }
@@ -728,7 +729,9 @@ export function sendToPlayer(playerId: string, message: ServerMessage): void {
 
 function requireInProgress(gameState: GameState): void {
   if (gameState.status !== GameStatus.IN_PROGRESS) {
-    throw new Error('Game is not in progress');
+    const err = new Error('Game is not in progress');
+    (err as any).code = 'GAME_NOT_IN_PROGRESS';
+    throw err;
   }
 }
 
