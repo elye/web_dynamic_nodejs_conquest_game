@@ -206,6 +206,13 @@ function handleConnection(ws: WebSocket, playerId: string, gameId: string): void
         type: ServerMessageType.LOBBY_UPDATE,
         room: { ...room, passwordHash: null },
       });
+    } else {
+      // Neither game nor room exists — game was cleaned up
+      sendToPlayer(playerId, {
+        type: ServerMessageType.ERROR,
+        code: 'GAME_NOT_FOUND',
+        message: 'This game is no longer available.',
+      });
     }
   }
 

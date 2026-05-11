@@ -41,6 +41,7 @@ export default function GamePage() {
   const [gameOverMsg, setGameOverMsg] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [skipAi, setSkipAi] = useState(true);
+  const [gameNotFound, setGameNotFound] = useState(false);
 
   const { sendMessage, isConnected, lastMessage } = useWebSocket(
     gameId,
@@ -114,7 +115,11 @@ export default function GamePage() {
         });
         break;
       case ServerMessageType.ERROR:
-        showNotification(`Error: ${msg.message}`);
+        if (msg.code === 'GAME_NOT_FOUND') {
+          setGameNotFound(true);
+        } else {
+          showNotification(`Error: ${msg.message}`);
+        }
         break;
     }
   }, [lastMessage]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -306,6 +311,48 @@ export default function GamePage() {
           <div className="bg-gray-800 border border-gray-600 rounded-xl p-8 text-center max-w-md">
             <h2 className="text-2xl font-bold text-white mb-2">Game Over</h2>
             <p className="text-gray-300 mb-6">{gameOverMsg}</p>
+            <button
+              onClick={() => {
+                resetGame();
+                useLobbyStore.getState().setGameState(null);
+                navigateTo('lobby');
+              }}
+              className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
+            >
+              Back to Lobby
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Eliminated overlay — show when player is eliminated but game continues */}
+      {!gameOverMsg && gameState.players.find((p) => p.id === playerId)?.isEliminated && (
+        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-gray-800 border border-gray-600 rounded-xl p-8 text-center max-w-md">
+            <h2 className="text-2xl font-bold text-red-400 mb-2">You have been eliminated</h2>
+            <p className="text-gray-300 mb-6">You can continue watching or return to the lobby.</p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => {
+                  resetGame();
+                  useLobbyStore.getState().setGameState(null);
+                  navigateTo('lobby');
+                }}
+                className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 transition-colors"
+              >
+                Back to Lobby
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Game not found overlay — game was cleaned up while disconnected */}
+      {gameNotFound && (
+        <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-gray-800 border border-gray-600 rounded-xl p-8 text-center max-w-md">
+            <h2 className="text-2xl font-bold text-yellow-400 mb-2">Game Disconnected</h2>
+            <p className="text-gray-300 mb-6">This game is no longer available. It may have ended while you were away.</p>
             <button
               onClick={() => {
                 resetGame();
