@@ -812,6 +812,30 @@ describe('endTurn', () => {
     expect(hexAfter!.deathMarker).toBeUndefined();
   });
 
+  it('kills units on isolated single-hex provinces at end of turn', () => {
+    // Add an isolated hex owned by p1 with a unit, far from p1's main territory
+    const isolatedUnit = makeUnit('p1', 5, 5, UnitType.PEASANT, 'isolated-u');
+    gs.hexes.push(makeHex(5, 5, 'p1', { unit: isolatedUnit }));
+
+    // Recalculate so the isolated hex becomes a single-hex province
+    recalculateAllProvinces(gs);
+
+    // End p1's turn — isolated unit should die immediately
+    endTurn(gs);
+
+    const isolatedHex = gs.hexes.find((h) => h.coord.q === 5 && h.coord.r === 5);
+    expect(isolatedHex!.unit).toBeNull();
+    expect(isolatedHex!.deathMarker).toBe('starvation');
+  });
+
+  it('does NOT kill units in multi-hex provinces at end of turn', () => {
+    // p1's main province has 3 hexes with one unit — should survive
+    const result = endTurn(gs);
+
+    const unitHex = result.hexes.find((h) => h.coord.q === 0 && h.coord.r === 0);
+    expect(unitHex!.unit).not.toBeNull();
+  });
+
   it("resets hasMoved for new player's units", () => {
     // Mark p2's unit as moved
     const p2UnitHex = gs.hexes.find((h) => h.coord.q === 2 && h.coord.r === 0)!;

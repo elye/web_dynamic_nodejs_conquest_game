@@ -904,6 +904,25 @@ export function endTurn(gameState: GameState): GameState {
     }
   }
 
+  // Kill units on single-hex provinces of the outgoing player.
+  // Single-hex provinces have no capitol (gold=0), income≤1, and unit upkeep≥2,
+  // so they can never sustain a unit — kill immediately rather than waiting a full round.
+  const outgoingProvinces = gameState.provinces.filter(
+    (p) => p.owner === currentPlayerId && p.hexes.length < 2,
+  );
+  {
+    const lookup = buildHexLookup(gameState.hexes);
+    for (const province of outgoingProvinces) {
+      for (const coord of province.hexes) {
+        const hex = lookup.get(coordKey(coord.q, coord.r));
+        if (hex?.unit && hex.unit.owner === currentPlayerId) {
+          hex.unit = null;
+          hex.deathMarker = 'starvation';
+        }
+      }
+    }
+  }
+
   for (const province of playerProvinces) {
     province.gold += province.income;
     province.gold -= province.upkeep;
