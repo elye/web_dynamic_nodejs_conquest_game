@@ -40,6 +40,7 @@ export default function GamePage() {
   const [notification, setNotification] = useState<string | null>(null);
   const [gameOverMsg, setGameOverMsg] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [skipAi, setSkipAi] = useState(true);
 
   const { sendMessage, isConnected, lastMessage } = useWebSocket(
     gameId,
@@ -53,6 +54,13 @@ export default function GamePage() {
       setGameState(lobbyGameState);
     }
   }, [lobbyGameState, gameState, setGameState]);
+
+  // Send skip AI preference when connected
+  useEffect(() => {
+    if (isConnected) {
+      sendMessage({ type: ClientMessageType.SET_SKIP_AI, skip: skipAi });
+    }
+  }, [isConnected, skipAi, sendMessage]);
 
   // Process incoming server messages
   useEffect(() => {
@@ -261,6 +269,19 @@ export default function GamePage() {
           {notification}
         </div>
       )}
+
+      {/* Skip AI toggle */}
+      <button
+        onClick={() => setSkipAi((v) => !v)}
+        className={`absolute top-4 right-36 border text-white text-sm px-3 py-1.5 rounded-lg transition-colors z-40 ${
+          skipAi
+            ? 'bg-green-700 border-green-500 hover:bg-green-600'
+            : 'bg-gray-800 border-gray-600 hover:bg-gray-700'
+        }`}
+        title={skipAi ? 'AI turns are instant' : 'AI turns are animated'}
+      >
+        ⚡ Fast AI
+      </button>
 
       {/* Help button */}
       <button

@@ -28,6 +28,17 @@ import { coordKey, getHexNeighbors, hexDistance } from '../game/mapGenerator.js'
 import { canCapture, getHexDefense } from '../game/combat.js';
 import { broadcastToGame, startTurnTimer } from '../ws/handler.js';
 
+// ── Per-game "skip AI animations" flag (default: true) ──
+const skipAiMap = new Map<string, boolean>();
+
+export function setSkipAi(gameId: string, skip: boolean): void {
+  skipAiMap.set(gameId, skip);
+}
+
+export function getSkipAi(gameId: string): boolean {
+  return skipAiMap.get(gameId) ?? true; // default ON
+}
+
 // ── Helpers ──
 
 function delay(ms: number): Promise<void> {
@@ -36,6 +47,17 @@ function delay(ms: number): Promise<void> {
 
 function randomDelay(): Promise<void> {
   return delay(500 + Math.random() * 1000);
+}
+
+// Wrapped broadcast/delay that skip when "skip AI" is enabled
+function broadcastDelta(gameState: GameState): void {
+  if (getSkipAi(gameState.id)) return;
+  broadcastDeltaRaw(gameState);
+}
+
+async function aiDelay(gameState: GameState): Promise<void> {
+  if (getSkipAi(gameState.id)) return;
+  await randomDelay();
 }
 
 function randomElement<T>(arr: T[]): T {
@@ -307,7 +329,7 @@ function findEnemyCapitalHexes(gameState: GameState, playerId: string): Hex[] {
 
 // ── Broadcast helper ──
 
-function broadcastDelta(gameState: GameState): void {
+function broadcastDeltaRaw(gameState: GameState): void {
   broadcastToGame(gameState.id, {
     type: ServerMessageType.GAME_STATE_DELTA,
     delta: {
@@ -345,7 +367,7 @@ async function playEasyTurn(gameState: GameState, playerId: string): Promise<voi
       try {
         buyUnit(gameState, playerId, unitType, targetHex.coord);
         broadcastDelta(gameState);
-        await randomDelay();
+        await aiDelay(gameState);
       } catch {
         // Invalid buy — skip
       }
@@ -360,7 +382,7 @@ async function playEasyTurn(gameState: GameState, playerId: string): Promise<voi
     try {
       moveUnit(gameState, playerId, move.unitId, move.to);
       broadcastDelta(gameState);
-      await randomDelay();
+      await aiDelay(gameState);
     } catch {
       // Invalid move — skip
     }
@@ -415,7 +437,7 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
     try {
       buyUnit(gameState, playerId, unitType, placementHex.coord);
       broadcastDelta(gameState);
-      await randomDelay();
+      await aiDelay(gameState);
     } catch {
       // Skip
     }
@@ -438,7 +460,7 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
       try {
         retireUnit(gameState, playerId, provinceUnits[0].unit!.id);
         broadcastDelta(gameState);
-        await randomDelay();
+        await aiDelay(gameState);
       } catch {
         break;
       }
@@ -458,7 +480,7 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
     try {
       buildStructure(gameState, playerId, StructureType.TOWER, hex.coord);
       broadcastDelta(gameState);
-      await randomDelay();
+      await aiDelay(gameState);
       break;
     } catch {
       // Skip
@@ -494,7 +516,7 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
       try {
         buildStructure(gameState, playerId, StructureType.FARMHOUSE, hex.coord);
         broadcastDelta(gameState);
-        await randomDelay();
+        await aiDelay(gameState);
       } catch {
         break;
       }
@@ -528,7 +550,7 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
       try {
         upgradeStructure(gameState, playerId, nextType, hex.coord);
         broadcastDelta(gameState);
-        await randomDelay();
+        await aiDelay(gameState);
         break;
       } catch {
         // Skip
@@ -573,7 +595,7 @@ async function playMediumTurn(gameState: GameState, playerId: string): Promise<v
       moveUnit(gameState, playerId, move.unitId, move.to);
       executed.add(move.unitId);
       broadcastDelta(gameState);
-      await randomDelay();
+      await aiDelay(gameState);
     } catch {
       // Skip
     }
@@ -614,7 +636,7 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
       try {
         retireUnit(gameState, playerId, scored[0].hex.unit!.id);
         broadcastDelta(gameState);
-        await randomDelay();
+        await aiDelay(gameState);
       } catch {
         break;
       }
@@ -704,7 +726,7 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
     try {
       buyUnit(gameState, playerId, desiredUnit, bestPlacement.coord);
       broadcastDelta(gameState);
-      await randomDelay();
+      await aiDelay(gameState);
     } catch {
       // Skip
     }
@@ -776,7 +798,7 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
       moveUnit(gameState, playerId, move.unitId, move.to);
       executed.add(move.unitId);
       broadcastDelta(gameState);
-      await randomDelay();
+      await aiDelay(gameState);
     } catch {
       // Skip
     }
@@ -816,7 +838,7 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
     try {
       buildStructure(gameState, playerId, structureType, candidate.hex.coord);
       broadcastDelta(gameState);
-      await randomDelay();
+      await aiDelay(gameState);
     } catch {
       // Skip
     }
@@ -851,7 +873,7 @@ async function playHardTurn(gameState: GameState, playerId: string): Promise<voi
       try {
         buyUnit(gameState, playerId, nextType, hex.coord);
         broadcastDelta(gameState);
-        await randomDelay();
+        await aiDelay(gameState);
       } catch {
         // Skip
       }
@@ -872,6 +894,8 @@ export async function playAITurn(gameId: string, playerId: string): Promise<void
 
   const difficulty = player.aiDifficulty ?? AiDifficulty.EASY;
 
+  const skip = getSkipAi(gameId);
+
   try {
     switch (difficulty) {
       case AiDifficulty.EASY:
@@ -889,16 +913,19 @@ export async function playAITurn(gameId: string, playerId: string): Promise<void
     if (gameState.status === GameStatus.IN_PROGRESS && gameState.currentTurnPlayerId === playerId) {
       endTurn(gameState);
 
-      broadcastToGame(gameId, {
-        type: ServerMessageType.TURN_CHANGED,
-        playerId: gameState.currentTurnPlayerId!,
-        turnNumber: gameState.turnNumber,
-      });
+      if (!skip) {
+        broadcastToGame(gameId, {
+          type: ServerMessageType.TURN_CHANGED,
+          playerId: gameState.currentTurnPlayerId!,
+          turnNumber: gameState.turnNumber,
+        });
 
-      broadcastDelta(gameState);
+        broadcastDelta(gameState);
+      }
 
-      // Restart turn timer for the next player
-      if (gameState.status === GameStatus.IN_PROGRESS) {
+      // Only start turn timer if not skipping, or if next player is human
+      const nextPlayer = gameState.players.find((p) => p.id === gameState.currentTurnPlayerId);
+      if (gameState.status === GameStatus.IN_PROGRESS && (!skip || !nextPlayer?.isAI)) {
         startTurnTimer(gameState, gameId);
       }
     }
@@ -908,16 +935,18 @@ export async function playAITurn(gameId: string, playerId: string): Promise<void
       if (gameState.status === GameStatus.IN_PROGRESS && gameState.currentTurnPlayerId === playerId) {
         endTurn(gameState);
 
-        broadcastToGame(gameId, {
-          type: ServerMessageType.TURN_CHANGED,
-          playerId: gameState.currentTurnPlayerId!,
-          turnNumber: gameState.turnNumber,
-        });
+        if (!skip) {
+          broadcastToGame(gameId, {
+            type: ServerMessageType.TURN_CHANGED,
+            playerId: gameState.currentTurnPlayerId!,
+            turnNumber: gameState.turnNumber,
+          });
 
-        broadcastDelta(gameState);
+          broadcastDelta(gameState);
+        }
 
-        // Restart turn timer for the next player
-        if (gameState.status === GameStatus.IN_PROGRESS) {
+        const nextPlayer = gameState.players.find((p) => p.id === gameState.currentTurnPlayerId);
+        if (gameState.status === GameStatus.IN_PROGRESS && (!skip || !nextPlayer?.isAI)) {
           startTurnTimer(gameState, gameId);
         }
       }
@@ -930,23 +959,34 @@ export async function playAITurn(gameId: string, playerId: string): Promise<void
 /**
  * Schedule an AI turn if the current player is AI.
  * Called after endTurn or game start.
+ * When skipAi is enabled: zero delay between consecutive AI turns,
+ * and only broadcast final state when all AI turns are done.
  */
-export function scheduleAITurnIfNeeded(gameState: GameState): void {
+export function scheduleAITurnIfNeeded(gameState: GameState, isChained = false): void {
   if (gameState.status !== GameStatus.IN_PROGRESS) return;
 
   const currentPlayer = gameState.players.find(
     (p) => p.id === gameState.currentTurnPlayerId,
   );
-  if (!currentPlayer || !currentPlayer.isAI || currentPlayer.isEliminated) return;
+  if (!currentPlayer || !currentPlayer.isAI || currentPlayer.isEliminated) {
+    // All consecutive AI turns done — if we were skipping, send final state now
+    if (isChained && getSkipAi(gameState.id)) {
+      broadcastToGame(gameState.id, {
+        type: ServerMessageType.GAME_STATE_FULL,
+        state: gameState,
+      });
+    }
+    return;
+  }
 
-  const aiDelay = 1000 + Math.random() * 2000; // 1-3 seconds
+  const skip = getSkipAi(gameState.id);
+  const aiDelayMs = skip ? 0 : 1000 + Math.random() * 2000;
   setTimeout(() => {
     void playAITurn(gameState.id, currentPlayer.id).then(() => {
-      // After AI finishes, check if the NEXT player is also AI
       const updatedState = getGameState(gameState.id);
       if (updatedState) {
-        scheduleAITurnIfNeeded(updatedState);
+        scheduleAITurnIfNeeded(updatedState, true);
       }
     });
-  }, aiDelay);
+  }, aiDelayMs);
 }

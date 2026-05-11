@@ -1,1 +1,1 @@
-export { playAITurn, scheduleAITurnIfNeeded } from './aiEngine.js';
+export { playAITurn, scheduleAITurnIfNeeded, setSkipAi, getSkipAi } from './aiEngine.js';

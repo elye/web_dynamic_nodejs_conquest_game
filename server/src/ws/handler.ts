@@ -28,7 +28,7 @@ import {
   findActiveGameByPlayerId,
   cleanupGame,
 } from '../game/engine.js';
-import { scheduleAITurnIfNeeded } from '../ai/aiEngine.js';
+import { scheduleAITurnIfNeeded, setSkipAi } from '../ai/aiEngine.js';
 
 // ── Types ──
 
@@ -326,6 +326,9 @@ function handleMessage(playerId: string, gameId: string, message: ClientMessage)
         break;
       case ClientMessageType.SURRENDER:
         handleSurrender(playerId, gameId);
+        break;
+      case ClientMessageType.SET_SKIP_AI:
+        if (gameId) setSkipAi(gameId, message.skip);
         break;
       case ClientMessageType.REQUEST_STATE:
         handleRequestState(playerId, gameId);
