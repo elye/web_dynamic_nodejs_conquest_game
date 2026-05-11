@@ -72,8 +72,8 @@ export default function HowToPlay({ isOpen, onClose }: HowToPlayProps) {
               <tbody className="divide-y divide-slate-700/50">
                 <tr><td className="py-1">🧑‍🌾 Peasant</td><td>1</td><td>10g</td><td>2g</td></tr>
                 <tr><td className="py-1">💂 Spearman</td><td>2</td><td>20g</td><td>6g</td></tr>
-                <tr><td className="py-1">🤴 Baron</td><td>3</td><td>30g</td><td>18g</td></tr>
-                <tr><td className="py-1">🐴 Knight</td><td>4</td><td>40g</td><td>54g</td></tr>
+                <tr><td className="py-1">🤴 Baron</td><td>3</td><td>30g</td><td>12g</td></tr>
+                <tr><td className="py-1">🐴 Knight</td><td>4</td><td>40g</td><td>20g</td></tr>
               </tbody>
             </table>
             <p className="mt-1 text-xs text-gray-400">Click a higher-tier unit button to upgrade an existing unit for the cost difference (e.g. upgrade Peasant → Spearman for 10g).</p>

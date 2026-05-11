@@ -12,8 +12,8 @@ export const UNIT_STRENGTH: Record<UnitType, number> = {
 export const UNIT_UPKEEP: Record<UnitType, number> = {
   [UnitType.PEASANT]: 2,
   [UnitType.SPEARMAN]: 6,
-  [UnitType.BARON]: 18,
-  [UnitType.KNIGHT]: 54,
+  [UnitType.BARON]: 12,
+  [UnitType.KNIGHT]: 20,
 };
 
 export const UNIT_COST: Record<UnitType, number> = {

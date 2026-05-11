@@ -60,8 +60,8 @@ Refreshing the page or navigating back to the same URL will reconnect the player
 |------|-----|------|--------|
 | 🧑‍🌾 Peasant | 1 | 10g | 2g |
 | 💂 Spearman | 2 | 20g | 6g |
-| 🤴 Baron | 3 | 30g | 18g |
-| 🐴 Knight | 4 | 40g | 54g |
+| 🤴 Baron | 3 | 30g | 12g |
+| 🐴 Knight | 4 | 40g | 20g |
 
 - **Upgrade units** by clicking a higher-tier button — costs the difference (e.g. Peasant → Spearman = 10g).
 - **Merge units** by moving one onto another — combined cost determines the result.
