@@ -43,8 +43,10 @@ interface ConnectedClient {
 const clients = new Map<string, ConnectedClient>();
 const gracePeriodTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const disconnectDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const GRACE_PERIOD_MS = 60_000;
+const DISCONNECT_DEBOUNCE_MS = 3_000;
 
 // ── Sanitization ──
 
@@ -103,6 +105,13 @@ export function setupWebSocket(server: http.Server): void {
 // ── Connection Handling ──
 
 function handleConnection(ws: WebSocket, playerId: string, gameId: string): void {
+  // Cancel any pending disconnect debounce (player reconnecting during page transition)
+  const existingDebounce = disconnectDebounceTimers.get(playerId);
+  if (existingDebounce) {
+    clearTimeout(existingDebounce);
+    disconnectDebounceTimers.delete(playerId);
+  }
+
   // Cancel any pending grace period timer
   const existingTimer = gracePeriodTimers.get(playerId);
   if (existingTimer) {
@@ -218,13 +227,30 @@ function handleConnection(ws: WebSocket, playerId: string, gameId: string): void
     // Only handle disconnect if this ws is still the active connection
     const client = clients.get(playerId);
     if (!client || client.ws !== ws) return;
-    handleDisconnect(playerId, gameId);
+
+    // Debounce disconnect to handle page transitions (e.g. lobby → game)
+    // where the WS closes briefly before a new one opens
+    const timer = setTimeout(() => {
+      disconnectDebounceTimers.delete(playerId);
+      // Re-check: if player already reconnected with a new WS, skip
+      const currentClient = clients.get(playerId);
+      if (currentClient && currentClient.ws !== ws) return;
+      handleDisconnect(playerId, gameId);
+    }, DISCONNECT_DEBOUNCE_MS);
+    disconnectDebounceTimers.set(playerId, timer);
   });
 
   ws.on('error', () => {
     const client = clients.get(playerId);
     if (!client || client.ws !== ws) return;
-    handleDisconnect(playerId, gameId);
+
+    const timer = setTimeout(() => {
+      disconnectDebounceTimers.delete(playerId);
+      const currentClient = clients.get(playerId);
+      if (currentClient && currentClient.ws !== ws) return;
+      handleDisconnect(playerId, gameId);
+    }, DISCONNECT_DEBOUNCE_MS);
+    disconnectDebounceTimers.set(playerId, timer);
   });
 }
 
