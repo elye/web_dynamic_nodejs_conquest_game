@@ -77,9 +77,8 @@ function LogtoCallback() {
     } catch (err) {
       console.error('Logto callback error:', err);
     }
-    // Redirect back to lobby (clear /callback path)
-    window.history.replaceState(null, '', '/');
-    navigateTo('lobby');
+    // Full reload to clear callback state and render the app fresh
+    window.location.replace('/');
   });
 
   if (isLoading) {

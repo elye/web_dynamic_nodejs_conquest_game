@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import { GameStatus } from '@conquest/shared';
+import { useLogto } from '@logto/react';
 import { useAuthStore } from '../store/authStore';
 import { useLobbyStore } from '../store/lobbyStore';
 import CreateGameModal from '../components/CreateGameModal';
 import SoloGameModal from '../components/SoloGameModal';
 import HowToPlay from '../components/HowToPlay';
 
+const logtoEnabled = !!(import.meta.env.VITE_LOGTO_ENDPOINT && import.meta.env.VITE_LOGTO_APP_ID);
+
 export default function LobbyPage() {
   const playerName = useAuthStore((s) => s.playerName);
+  const authMode = useAuthStore((s) => s.authMode);
+  const logto = logtoEnabled ? useLogto() : null;
   const { games, isLoading, error, fetchGames, createGame, joinGame, startSoloGame } = useLobbyStore();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showSoloModal, setShowSoloModal] = useState(false);
@@ -46,10 +51,15 @@ export default function LobbyPage() {
               <span className="text-white font-medium">{playerName}</span>
             </span>
             <button
-              onClick={() => useAuthStore.getState().logout()}
+              onClick={() => {
+                useAuthStore.getState().logout();
+                if (authMode === 'logto' && logto) {
+                  logto.signOut(window.location.origin);
+                }
+              }}
               className="px-2 py-1 md:px-3 md:py-1.5 rounded-lg bg-slate-700 text-gray-300 hover:bg-slate-600 transition-colors text-xs md:text-sm"
             >
-              Change Name
+              {authMode === 'logto' ? 'Sign Out' : 'Change Name'}
             </button>
           </div>
         </div>
