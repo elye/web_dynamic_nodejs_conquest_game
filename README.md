@@ -14,6 +14,28 @@ An online hex-based territory strategy game.
 npm install
 ```
 
+### Environment Variables
+
+Copy the example files and fill in your values:
+
+```bash
+cp client/.env.example client/.env
+cp server/.env.example server/.env
+```
+
+| Variable | Location | Description |
+|----------|----------|-------------|
+| `VITE_LOGTO_ENDPOINT` | `client/.env` | Logto tenant URL (e.g. `https://xxx.logto.app`) |
+| `VITE_LOGTO_APP_ID` | `client/.env` | Logto SPA application ID |
+| `LOGTO_ENDPOINT` | `server/.env` | Logto tenant URL (for JWKS token verification) |
+| `JWT_SECRET` | `server/.env` | Secret for signing server JWTs (defaults to dev secret) |
+| `PORT` | `server/.env` | Server port (defaults to 3001) |
+| `CORS_ORIGINS` | `server/.env` | Comma-separated allowed origins |
+
+Logto variables are optional — if omitted, only guest login is available.
+
+**Logto Console setup:** Add `http://localhost:5173/callback` as a redirect URI and `http://localhost:5173/` as a post sign-out redirect URI in your Logto SPA app settings.
+
 ### Dev mode (hot-reload, two terminals)
 
 ```bash
@@ -110,7 +132,8 @@ npm run build -w shared && npm run build -w client && npm run build -w server &&
 
 ## Session & Reconnection
 
-- Players authenticate as guests with a name. Auth tokens are stored in `localStorage` and persist across page reloads.
+- Players can authenticate as **guests** (enter a name) or **sign in via Logto** (if configured). Auth tokens are stored in `localStorage` and persist across page reloads.
+- Logto sign-in verifies the ID token server-side via JWKS, then issues a server JWT — the same format used for guest sessions.
 - The game URL (hash route) is the source of truth for reconnection — no separate session storage for game IDs.
 - If a player disconnects (e.g. refresh, network drop), they have **60 seconds** to reconnect before being auto-surrendered.
 - Each player can only be in **one game at a time**. Starting or joining a new game automatically surrenders from any previous game.

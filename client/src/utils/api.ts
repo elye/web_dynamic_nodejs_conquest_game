@@ -45,6 +45,10 @@ export function createGuestSession(name?: string): Promise<{ playerId: string; t
   return request('POST', '/auth/guest', name ? { name } : undefined);
 }
 
+export function exchangeLogtoToken(idToken: string): Promise<{ playerId: string; token: string; name: string }> {
+  return request('POST', '/auth/logto', { idToken });
+}
+
 export function createGame(body: { name: string; mapSize: string; maxPlayers: number; turnTimer: number; winCondition: string; password?: string }): Promise<GameRoom> {
   return request('POST', '/games', body);
 }
