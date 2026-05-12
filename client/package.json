@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@conquest/shared": "*",
+    "@logto/react": "^4.0.14",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zustand": "^5.0.0"

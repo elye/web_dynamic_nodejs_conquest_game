@@ -1,6 +1,7 @@
 import { Component, useEffect, useState, useCallback } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { GameStatus } from '@conquest/shared';
+import { useLogto, useHandleSignInCallback } from '@logto/react';
 import LobbyPage from './pages/LobbyPage';
 import GameRoomPage from './pages/GameRoomPage';
 import GamePage from './pages/GamePage';
@@ -63,10 +64,41 @@ function useHashRoute() {
   return route;
 }
 
+function LogtoCallback() {
+  const loginWithLogto = useAuthStore((s) => s.loginWithLogto);
+  const { getIdToken } = useLogto();
+
+  const { isLoading } = useHandleSignInCallback(async () => {
+    try {
+      const idToken = await getIdToken();
+      if (idToken) {
+        await loginWithLogto(idToken);
+      }
+    } catch (err) {
+      console.error('Logto callback error:', err);
+    }
+    // Redirect back to lobby (clear /callback path)
+    window.history.replaceState(null, '', '/');
+    navigateTo('lobby');
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <p className="text-gray-400">Signing in...</p>
+      </div>
+    );
+  }
+  return null;
+}
+
+const logtoEnabled = !!(import.meta.env.VITE_LOGTO_ENDPOINT && import.meta.env.VITE_LOGTO_APP_ID);
+
 function WelcomeScreen() {
   const login = useAuthStore((s) => s.login);
   const [name, setName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const logto = logtoEnabled ? useLogto() : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,6 +110,11 @@ function WelcomeScreen() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleLogtoSignIn = () => {
+    const callbackUrl = `${window.location.origin}/callback`;
+    logto?.signIn(callbackUrl);
   };
 
   return (
@@ -99,8 +136,24 @@ function WelcomeScreen() {
           disabled={isLoading}
           className="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-500 disabled:opacity-50 transition-colors"
         >
-          {isLoading ? 'Connecting...' : 'Play'}
+          {isLoading ? 'Connecting...' : 'Play as Guest'}
         </button>
+        {logtoEnabled && (
+          <>
+            <div className="flex items-center my-4">
+              <div className="flex-1 border-t border-slate-600" />
+              <span className="px-3 text-gray-500 text-xs">or</span>
+              <div className="flex-1 border-t border-slate-600" />
+            </div>
+            <button
+              type="button"
+              onClick={handleLogtoSignIn}
+              className="w-full px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-500 transition-colors"
+            >
+              Sign in with Account
+            </button>
+          </>
+        )}
       </form>
     </div>
   );
@@ -119,6 +172,11 @@ function App() {
   useEffect(() => {
     restore();
   }, [restore]);
+
+  // Handle Logto callback redirect
+  if (logtoEnabled && window.location.pathname === '/callback') {
+    return <LogtoCallback />;
+  }
 
   // Rejoin game/room from URL hash on page load
   useEffect(() => {
